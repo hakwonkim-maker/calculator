@@ -4,12 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>계산기</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       display: flex;
@@ -20,12 +17,60 @@
       font-family: 'Segoe UI', sans-serif;
     }
 
+    /* 로그인 화면 */
+    #login-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+
+    #login-screen h1 {
+      color: #e2e8f0;
+      font-size: 24px;
+      font-weight: 300;
+    }
+
+    #login-screen p {
+      color: #a0aec0;
+      font-size: 14px;
+    }
+
+    /* 계산기 */
+    #calculator-screen { display: none; }
+
     .calculator {
       background: #16213e;
       border-radius: 24px;
       padding: 24px;
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
       width: 320px;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .user-info span {
+      color: #a0aec0;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 200px;
+    }
+
+    .btn-logout {
+      background: #2d3748;
+      color: #fc8181;
+      border: none;
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
     }
 
     .display {
@@ -71,102 +116,98 @@
       transition: transform 0.1s, opacity 0.1s;
     }
 
-    button:active {
-      transform: scale(0.94);
-      opacity: 0.85;
-    }
-
-    .btn-clear {
-      background: #e53e3e;
-      color: white;
-    }
-
-    .btn-sign, .btn-percent {
-      background: #2d3748;
-      color: #a0aec0;
-    }
-
-    .btn-op {
-      background: #e8a020;
-      color: white;
-    }
-
-    .btn-num {
-      background: #2a3a5c;
-      color: #e2e8f0;
-    }
-
-    .btn-zero {
-      grid-column: span 2;
-      text-align: left;
-      padding-left: 28px;
-    }
-
-    .btn-eq {
-      background: #e8a020;
-      color: white;
-    }
-
-    .btn-del {
-      background: #2d3748;
-      color: #fc8181;
-      font-size: 20px;
-    }
+    button:active { transform: scale(0.94); opacity: 0.85; }
+    .btn-clear { background: #e53e3e; color: white; }
+    .btn-sign, .btn-percent { background: #2d3748; color: #a0aec0; }
+    .btn-op { background: #e8a020; color: white; }
+    .btn-num { background: #2a3a5c; color: #e2e8f0; }
+    .btn-zero { grid-column: span 2; text-align: left; padding-left: 28px; }
+    .btn-eq { background: #e8a020; color: white; }
   </style>
 </head>
 <body>
-  <div class="calculator">
-    <div class="display">
-      <div class="expression" id="expression"></div>
-      <div class="result" id="result">0</div>
+
+  <!-- 로그인 화면 -->
+  <div id="login-screen">
+    <h1>계산기</h1>
+    <p>Google 계정으로 로그인하세요</p>
+    <div id="g_id_onload"
+      data-client_id="43256886951-9b2d0vgodmfs1vhq40nqm42t20s91pd3.apps.googleusercontent.com"
+      data-callback="handleCredential"
+      data-auto_prompt="false">
     </div>
-    <div class="buttons">
-      <button class="btn-clear" onclick="clearAll()">AC</button>
-      <button class="btn-sign" onclick="toggleSign()">+/-</button>
-      <button class="btn-percent" onclick="percent()">%</button>
-      <button class="btn-op" onclick="setOp('/')">÷</button>
+    <div class="g_id_signin"
+      data-type="standard"
+      data-size="large"
+      data-theme="filled_blue"
+      data-text="sign_in_with"
+      data-shape="rectangular"
+      data-locale="ko">
+    </div>
+  </div>
 
-      <button class="btn-num" onclick="input('7')">7</button>
-      <button class="btn-num" onclick="input('8')">8</button>
-      <button class="btn-num" onclick="input('9')">9</button>
-      <button class="btn-op" onclick="setOp('*')">×</button>
+  <!-- 계산기 화면 -->
+  <div id="calculator-screen">
+    <div class="calculator">
+      <div class="user-info">
+        <span id="user-email"></span>
+        <button class="btn-logout" onclick="logout()">로그아웃</button>
+      </div>
+      <div class="display">
+        <div class="expression" id="expression"></div>
+        <div class="result" id="result">0</div>
+      </div>
+      <div class="buttons">
+        <button class="btn-clear" onclick="clearAll()">AC</button>
+        <button class="btn-sign" onclick="toggleSign()">+/-</button>
+        <button class="btn-percent" onclick="percent()">%</button>
+        <button class="btn-op" onclick="setOp('/')">÷</button>
 
-      <button class="btn-num" onclick="input('4')">4</button>
-      <button class="btn-num" onclick="input('5')">5</button>
-      <button class="btn-num" onclick="input('6')">6</button>
-      <button class="btn-op" onclick="setOp('-')">−</button>
+        <button class="btn-num" onclick="input('7')">7</button>
+        <button class="btn-num" onclick="input('8')">8</button>
+        <button class="btn-num" onclick="input('9')">9</button>
+        <button class="btn-op" onclick="setOp('*')">×</button>
 
-      <button class="btn-num" onclick="input('1')">1</button>
-      <button class="btn-num" onclick="input('2')">2</button>
-      <button class="btn-num" onclick="input('3')">3</button>
-      <button class="btn-op" onclick="setOp('+')">+</button>
+        <button class="btn-num" onclick="input('4')">4</button>
+        <button class="btn-num" onclick="input('5')">5</button>
+        <button class="btn-num" onclick="input('6')">6</button>
+        <button class="btn-op" onclick="setOp('-')">−</button>
 
-      <button class="btn-num btn-zero" onclick="input('0')">0</button>
-      <button class="btn-num" onclick="inputDot()">.</button>
-      <button class="btn-eq" onclick="calculate()">=</button>
+        <button class="btn-num" onclick="input('1')">1</button>
+        <button class="btn-num" onclick="input('2')">2</button>
+        <button class="btn-num" onclick="input('3')">3</button>
+        <button class="btn-op" onclick="setOp('+')">+</button>
+
+        <button class="btn-num btn-zero" onclick="input('0')">0</button>
+        <button class="btn-num" onclick="inputDot()">.</button>
+        <button class="btn-eq" onclick="calculate()">=</button>
+      </div>
     </div>
   </div>
 
   <script>
-    let current = '0';
-    let previous = '';
-    let operator = null;
-    let shouldReset = false;
+    function handleCredential(response) {
+      const payload = JSON.parse(atob(response.credential.split('.')[1]));
+      document.getElementById('user-email').textContent = payload.email;
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('calculator-screen').style.display = 'block';
+    }
 
+    function logout() {
+      google.accounts.id.disableAutoSelect();
+      document.getElementById('calculator-screen').style.display = 'none';
+      document.getElementById('login-screen').style.display = 'flex';
+    }
+
+    let current = '0', previous = '', operator = null, shouldReset = false;
     const resultEl = document.getElementById('result');
     const expressionEl = document.getElementById('expression');
 
-    function updateDisplay() {
-      resultEl.textContent = current;
-    }
+    function updateDisplay() { resultEl.textContent = current; }
 
     function input(digit) {
-      if (shouldReset) {
-        current = digit;
-        shouldReset = false;
-      } else {
-        current = current === '0' ? digit : current + digit;
-      }
+      if (shouldReset) { current = digit; shouldReset = false; }
+      else current = current === '0' ? digit : current + digit;
       if (current.length > 12) current = current.slice(0, 12);
       updateDisplay();
     }
@@ -179,17 +220,14 @@
 
     function setOp(op) {
       if (operator && !shouldReset) calculate(true);
-      previous = current;
-      operator = op;
-      shouldReset = true;
-      const opSymbol = { '+': '+', '-': '−', '*': '×', '/': '÷' }[op];
-      expressionEl.textContent = `${previous} ${opSymbol}`;
+      previous = current; operator = op; shouldReset = true;
+      const sym = { '+': '+', '-': '−', '*': '×', '/': '÷' }[op];
+      expressionEl.textContent = `${previous} ${sym}`;
     }
 
     function calculate(chaining = false) {
       if (!operator || !previous) return;
-      const a = parseFloat(previous);
-      const b = parseFloat(current);
+      const a = parseFloat(previous), b = parseFloat(current);
       let res;
       switch (operator) {
         case '+': res = a + b; break;
@@ -197,22 +235,16 @@
         case '*': res = a * b; break;
         case '/': res = b === 0 ? 'Error' : a / b; break;
       }
-      const opSymbol = { '+': '+', '-': '−', '*': '×', '/': '÷' }[operator];
-      if (!chaining) expressionEl.textContent = `${previous} ${opSymbol} ${current} =`;
+      const sym = { '+': '+', '-': '−', '*': '×', '/': '÷' }[operator];
+      if (!chaining) expressionEl.textContent = `${previous} ${sym} ${current} =`;
       current = res === 'Error' ? 'Error' : String(parseFloat(res.toFixed(10)));
-      operator = null;
-      previous = '';
-      shouldReset = true;
+      operator = null; previous = ''; shouldReset = true;
       updateDisplay();
     }
 
     function clearAll() {
-      current = '0';
-      previous = '';
-      operator = null;
-      shouldReset = false;
-      expressionEl.textContent = '';
-      updateDisplay();
+      current = '0'; previous = ''; operator = null; shouldReset = false;
+      expressionEl.textContent = ''; updateDisplay();
     }
 
     function toggleSign() {
@@ -228,6 +260,7 @@
     }
 
     document.addEventListener('keydown', (e) => {
+      if (document.getElementById('calculator-screen').style.display === 'none') return;
       if (e.key >= '0' && e.key <= '9') input(e.key);
       else if (e.key === '.') inputDot();
       else if (e.key === '+') setOp('+');
