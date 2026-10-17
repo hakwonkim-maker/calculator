@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>사진 선별 대시보드</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --surface-2: #faf9f6;
+    --line: #e4e1d9;
+    --text: #1c1b19;
+    --text-2: #57534b;
+    --text-3: #6f6a60;
+    --primary: #0f6b5f;
+    --primary-ink: #ffffff;
+    --primary-soft: #e3f1ee;
+    --accent: #c2410c;
+    --ok: #15803d;
+    --ok-soft: #e7f5ec;
+    --warn: #a16207;
+    --warn-soft: #fdf3dc;
+    --bad: #b91c1c;
+    --bad-soft: #fde8e8;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(28,27,25,.06), 0 4px 16px rgba(28,27,25,.05);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
+
+  /* Header */
+  .header {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 24px;
+    background: rgba(245,244,240,.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; line-height: 1.2; }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 9px;
+    background: var(--primary); color: #fff;
+    display: grid; place-items: center; font-size: 16px;
+  }
+  .brand small { display: block; font-weight: 500; font-size: 12px; color: var(--text-3); }
+  .header-spacer { flex: 1; }
+  .folder-name { color: var(--text-2); font-size: 13px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px; padding: 0 18px;
+    border-radius: 10px; border: 1px solid var(--line);
+    background: var(--surface); font-weight: 600;
+    transition: background .15s, border-color .15s, transform .05s;
+  }
+  .btn:hover { background: var(--surface-2); border-color: #cfcabf; }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+  .btn-primary:hover { background: #0c5a50; border-color: #0c5a50; }
+  .btn-block { width: 100%; }
+  .btn-sm { min-height: 36px; padding: 0 12px; font-size: 13px; }
+
+  /* Progress */
+  .progress { display: none; align-items: center; gap: 10px; min-width: 220px; }
+  .progress.active { display: flex; }
+  .progress-track { flex: 1; height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .progress-bar { height: 100%; width: 0; background: var(--primary); transition: width .2s; }
+  .progress-text { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* Empty state */
+  .empty { max-width: 860px; margin: 48px auto; padding: 0 24px; }
+  .drop {
+    border: 2px dashed #cbc6ba; border-radius: 20px; background: var(--surface);
+    padding: 56px 24px; text-align: center; transition: border-color .15s, background .15s;
+  }
+  .drop.over { border-color: var(--primary); background: var(--primary-soft); }
+  .drop h1 { font-size: 28px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .drop p { color: var(--text-2); margin: 0 0 24px; font-size: 16px; }
+  .drop .btn { min-height: 52px; padding: 0 28px; font-size: 16px; }
+  .drop-hint { margin-top: 14px; font-size: 13px; color: var(--text-3); }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
+  .step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .step b { display: block; font-size: 15px; margin-bottom: 4px; }
+  .step span { color: var(--text-2); font-size: 13px; }
+  .step-num { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); font-weight: 700; font-size: 12px; margin-bottom: 8px; }
+  .privacy { margin-top: 16px; padding: 12px 16px; border-radius: 10px; background: var(--ok-soft); color: #14532d; font-size: 13px; }
+
+  /* Dashboard layout */
+  .layout { display: none; grid-template-columns: 280px 1fr; gap: 20px; padding: 20px 24px 48px; max-width: 1600px; margin: 0 auto; }
+  .layout.active { display: grid; }
+  .sidebar { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 84px; align-self: start; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .panel h3 { margin: 0 0 12px; font-size: 14px; line-height: 1.3; }
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+  .field-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; font-weight: 600; }
+  .field-val { font-variant-numeric: tabular-nums; color: var(--primary); }
+  .field-help { font-size: 12px; color: var(--text-3); margin-top: 2px; line-height: 1.5; }
+  input[type=range] { width: 100%; accent-color: var(--primary); height: 28px; }
+  .export-note { font-size: 12px; color: var(--text-3); margin: 8px 0 0; line-height: 1.5; }
+  .stack { display: flex; flex-direction: column; gap: 8px; }
+
+  .main { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+  /* KPI */
+  .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+  .kpi-label { font-size: 12px; color: var(--text-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .kpi-value { font-size: 26px; font-weight: 700; line-height: 1.2; margin-top: 4px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .kpi-sub { font-size: 12px; color: var(--text-3); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  /* Overview */
+  .overview { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; }
+  .hist { display: flex; align-items: flex-end; gap: 4px; height: 120px; padding-top: 8px; }
+  .hist-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+  .hist-bar { width: 100%; background: var(--primary); border-radius: 4px 4px 0 0; min-height: 2px; opacity: .85; transition: height .2s; }
+  .hist-bar.low { background: #b45309; }
+  .hist-col span { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .hist-col:hover .hist-bar { opacity: 1; }
+  .split { display: flex; height: 14px; border-radius: 99px; overflow: hidden; background: var(--line); margin: 12px 0 14px; }
+  .split div { height: 100%; transition: width .2s; }
+  .split div + div { border-left: 2px solid var(--surface); }
+  .legend { display: grid; gap: 8px; }
+  .legend-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .legend-row b { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .reasons { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* Tabs & toolbar */
+  .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 4px; background: #ebe8e1; padding: 4px; border-radius: 12px; flex-wrap: wrap; }
+  .tab { min-height: 40px; padding: 0 14px; border: 0; border-radius: 9px; background: transparent; font-weight: 600; color: var(--text-2); }
+  .tab:hover { color: var(--text); background: rgba(255,255,255,.5); }
+  .tab[aria-selected=true] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .tab .count { font-weight: 500; color: var(--text-3); margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .toolbar select { min-height: 40px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); padding: 0 10px; }
+  .toolbar .grow { flex: 1; }
+  .tab-desc { font-size: 13px; color: var(--text-2); margin: -4px 0 0; }
+
+  /* Grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .card {
+    position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    overflow: hidden; box-shadow: var(--shadow); transition: transform .12s, box-shadow .12s, border-color .12s;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(28,27,25,.1); }
+  .card.is-keep { border-color: var(--ok); }
+  .card.is-drop .thumb img { opacity: .55; filter: grayscale(.5); }
+  .thumb { display: block; width: 100%; aspect-ratio: 4/3; background: #e9e6df; border: 0; padding: 0; position: relative; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .badge-best {
+    position: absolute; top: 8px; left: 8px; background: #1c1b19; color: #fde68a;
+    font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; letter-spacing: .02em;
+  }
+  .score {
+    position: absolute; top: 8px; right: 8px; min-width: 36px; text-align: center;
+    background: rgba(28,27,25,.82); color: #fff; font-weight: 700; font-size: 12px;
+    padding: 2px 8px; border-radius: 99px; font-variant-numeric: tabular-nums;
+  }
+  .card-body { padding: 10px 12px 12px; }
+  .card-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-meta { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; min-height: 22px; }
+  .chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; line-height: 1.5; white-space: nowrap; }
+  .chip-ok { background: var(--ok-soft); color: #14532d; }
+  .chip-warn { background: var(--warn-soft); color: #713f12; }
+  .chip-bad { background: var(--bad-soft); color: #7f1d1d; }
+  .chip-info { background: #e8eef7; color: #1e3a5f; }
+  .card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+  .toggle {
+    min-height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2);
+    font-size: 12px; font-weight: 600; color: var(--text-2);
+  }
+  .toggle:hover { border-color: #bdb7aa; color: var(--text); }
+  .toggle.on-keep { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .toggle.on-drop { background: var(--bad); border-color: var(--bad); color: #fff; }
+
+  /* Groups */
+  .groups { display: flex; flex-direction: column; gap: 14px; }
+  .group { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); }
+  .group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .group-head h4 { margin: 0; font-size: 15px; line-height: 1.3; }
+  .group-head .muted { color: var(--text-3); font-size: 13px; }
+  .group-strip { display: grid; grid-auto-flow: column; grid-auto-columns: 170px; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+
+  .more { display: flex; justify-content: center; padding: 8px 0; }
+  .no-result { text-align: center; padding: 48px 16px; color: var(--text-2); background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); }
+
+  /* Skeleton */
+  .skeleton { aspect-ratio: 4/3; border-radius: var(--radius); background: linear-gradient(90deg, #e9e6df 0%, #f3f1ec 50%, #e9e6df 100%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  /* Lightbox */
+  .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(14,13,12,.92); display: none; grid-template-columns: 1fr 320px; }
+  .lightbox.open { display: grid; }
+  .lb-stage { position: relative; display: grid; place-items: center; padding: 24px; min-height: 0; }
+  .lb-stage img { max-width: 100%; max-height: calc(100vh - 48px); object-fit: contain; border-radius: 6px; }
+  .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; border-radius: 50%; border: 0; background: rgba(255,255,255,.14); color: #fff; font-size: 22px; }
+  .lb-nav:hover { background: rgba(255,255,255,.26); }
+  .lb-prev { left: 16px; } .lb-next { right: 16px; }
+  .lb-side { background: #1f1e1c; color: #f0eee9; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .lb-side h4 { margin: 0; font-size: 15px; line-height: 1.3; word-break: break-all; }
+  .lb-close { align-self: flex-end; background: transparent; border: 1px solid #4a4741; color: #f0eee9; border-radius: 8px; min-height: 36px; padding: 0 12px; }
+  .lb-close:hover { background: #2e2c29; }
+  .metrics { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 13px; }
+  .metrics dt { color: #b9b4aa; }
+  .metrics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .meter { height: 6px; border-radius: 99px; background: #3a3833; overflow: hidden; grid-column: 1 / -1; margin-top: -2px; }
+  .meter i { display: block; height: 100%; background: #5eead4; }
+  .lb-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .lb-actions .toggle { background: #2e2c29; border-color: #4a4741; color: #f0eee9; min-height: 44px; font-size: 13px; }
+  .lb-keys { font-size: 12px; color: #b9b4aa; line-height: 1.6; }
+  kbd { background: #3a3833; border-radius: 4px; padding: 1px 6px; font-family: inherit; font-size: 11px; color: #f0eee9; }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); background: #1c1b19; color: #fff; padding: 12px 18px; border-radius: 10px; font-size: 14px; opacity: 0; pointer-events: none; transition: all .2s; z-index: 60; max-width: calc(100vw - 32px); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* Responsive */
+  @media (max-width: 1280px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 1024px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: static; display: grid; grid-template-columns: 1fr 1fr; }
+    .overview { grid-template-columns: 1fr; }
+    .lightbox { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+    .lb-side { max-height: 42vh; }
+    .lb-stage img { max-height: calc(58vh - 48px); }
+  }
+  @media (max-width: 768px) {
+    .header { padding: 10px 16px; flex-wrap: wrap; }
+    .folder-name { display: none; }
+    .progress { order: 3; width: 100%; }
+    .layout { padding: 16px; }
+    .sidebar { grid-template-columns: 1fr; order: 2; }
+    .steps { grid-template-columns: 1fr; }
+    .drop { padding: 36px 16px; }
+    .drop h1 { font-size: 22px; }
+  }
+  @media (max-width: 640px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .group-strip { grid-auto-columns: 150px; }
+    .tabs { width: 100%; }
+    .tab { flex: 1; padding: 0 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></div>
+    <div>사진 선별 대시보드<small>유사 사진 묶기 · 쓸만한 사진 고르기</small></div>
+  </div>
+  <div class="header-spacer"></div>
+  <div class="progress" id="progress" role="status" aria-live="polite">
+    <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+    <span class="progress-text" id="progressText">0 / 0</span>
+  </div>
+  <span class="folder-name" id="folderName"></span>
+  <button class="btn btn-primary" id="pickBtnTop" hidden>📁 다른 폴더 열기</button>
+</header>
+
+<input type="file" id="dirInput" webkitdirectory directory multiple hidden>
+
+<!-- Empty state -->
+<section class="empty" id="empty">
+  <div class="drop" id="drop">
+    <h1>폴더를 고르면 사진을 자동으로 정리해 드려요</h1>
+    <p>비슷한 사진은 한 그룹으로 묶고, 흐리거나 너무 어둡거나 밝은 사진은 따로 골라냅니다.</p>
+    <button class="btn btn-primary" id="pickBtn">📁 사진 폴더 선택</button>
+    <div class="drop-hint">또는 폴더를 이 영역에 끌어다 놓으세요 · JPG, PNG, WebP, GIF, BMP, AVIF 지원 (하위 폴더 포함)</div>
+  </div>
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><b>폴더 선택</b><span>하위 폴더까지 사진을 모두 찾습니다.</span></div>
+    <div class="step"><div class="step-num">2</div><b>자동 분석</b><span>선명도, 밝기, 해상도, 비슷한 정도를 계산합니다.</span></div>
+    <div class="step"><div class="step-num">3</div><b>선별 · 내보내기</b><span>추천 사진을 새 폴더로 복사하거나 CSV로 저장합니다.</span></div>
+  </div>
+  <div class="privacy">🔒 사진은 이 브라우저 안에서만 분석되고 어디에도 업로드되지 않습니다. 원본 파일은 수정하거나 삭제하지 않습니다.</div>
+</section>
+
+<!-- Dashboard -->
+<div class="layout" id="layout">
+  <aside class="sidebar">
+    <section class="panel" aria-labelledby="crit-h">
+      <h3 id="crit-h">선별 기준</h3>
+      <div class="field">
+        <div class="field-head"><label for="simTh">유사 사진 판정</label><span class="field-val" id="simThVal"></span></div>
+        <input type="range" id="simTh" min="0" max="20" step="1" value="10">
+        <div class="field-help">오른쪽으로 갈수록 덜 닮은 사진도 같은 그룹으로 묶습니다.</div>
+      </div>
+      <div class="field">
+        <div class="field-head"><label for="blurTh">흐림 판정 기준</label><span class="field-val" id="blurThVal"></span></div>
+        <input type="range" id="blurTh" min="0" max="300" step="5" value="60">
+        <div class="field-help">선명도 점수가 이 값보다 낮으면 '흐림'으로 봅니다.</div>
+      </div>
+      <div class="field">
+        <div class="field-head"><label for="minRes">최소 해상도 (짧은 변)</label><span class="field-val" id="minResVal"></span></div>
+        <input type="range" id="minRes" min="0" max="3000" step="100" value="800">
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="exp-h">
+      <h3 id="exp-h">내보내기</h3>
+      <div class="stack">
+        <button class="btn btn-primary btn-block" id="copyKeepBtn">추천 사진 폴더로 복사</button>
+        <button class="btn btn-block" id="copyGroupsBtn">유사 그룹별 폴더로 복사</button>
+        <button class="btn btn-block" id="csvBtn">분석 결과 CSV 저장</button>
+      </div>
+      <p class="export-note" id="exportNote">선택한 폴더 안에 새 폴더를 만들어 복사합니다. 원본은 그대로 남습니다.</p>
+    </section>
+  </aside>
+
+  <main class="main">
+    <section class="kpis" id="kpis" aria-label="요약 지표"></section>
+
+    <section class="overview">
+      <div class="panel">
+        <h3>품질 점수 분포 <span class="kpi-sub">(0~100, 막대를 누르면 해당 구간만 보기)</span></h3>
+        <div class="hist" id="hist"></div>
+      </div>
+      <div class="panel">
+        <h3>선별 결과</h3>
+        <div class="split" id="split" aria-hidden="true"></div>
+        <div class="legend" id="legend"></div>
+        <div class="reasons" id="reasons"></div>
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div class="grow"></div>
+      <label class="sr-only" for="sortSel">정렬</label>
+      <select id="sortSel">
+        <option value="score">품질 점수 높은 순</option>
+        <option value="score-asc">품질 점수 낮은 순</option>
+        <option value="date">촬영(수정) 시간 순</option>
+        <option value="name">파일 이름 순</option>
+      </select>
+    </div>
+    <p class="tab-desc" id="tabDesc"></p>
+    <section id="content" aria-live="polite"></section>
+  </main>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="사진 크게 보기">
+  <div class="lb-stage">
+    <img id="lbImg" alt="">
+    <button class="lb-nav lb-prev" id="lbPrev" aria-label="이전 사진">‹</button>
+    <button class="lb-nav lb-next" id="lbNext" aria-label="다음 사진">›</button>
+  </div>
+  <aside class="lb-side">
+    <button class="lb-close" id="lbClose">닫기 (Esc)</button>
+    <h4 id="lbName"></h4>
+    <div class="chips" id="lbChips"></div>
+    <dl class="metrics" id="lbMetrics"></dl>
+    <div class="lb-actions">
+      <button class="toggle" id="lbKeep">✓ 유지 (K)</button>
+      <button class="toggle" id="lbDrop">✕ 제외 (D)</button>
+    </div>
+    <div class="lb-keys"><kbd>←</kbd> <kbd>→</kbd> 이동 · <kbd>K</kbd> 유지 · <kbd>D</kbd> 제외 · <kbd>U</kbd> 자동 판정으로 되돌리기</div>
+  </aside>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const IMG_RE = /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif)$/i;
+  const ANALYSIS_SIZE = 512;
+  const THUMB_SIZE = 360;
+  const PAGE = 200;
+  const CONCURRENCY = Math.min(6, Math.max(2, (navigator.hardwareConcurrency || 4) - 1));
+
+  const STATUS = {
+    keep:   { label: '추천',   color: 'var(--ok)',  chip: 'chip-ok' },
+    dup:    { label: '중복',   color: 'var(--warn)', chip: 'chip-warn' },
+    drop:   { label: '제외 후보', color: 'var(--bad)', chip: 'chip-bad' },
+  };
+  const ISSUE_LABEL = { blur: '흐림', dark: '너무 어두움', bright: '너무 밝음', lowres: '저해상도', dup: '유사 사진 중복', error: '읽기 실패' };
+
+  const TABS = [
+    { id: 'keep',   label: '추천 사진',  desc: '흐림·노출·해상도 문제가 없고, 유사 그룹에서는 가장 잘 나온 한 장만 남긴 결과입니다.' },
+    { id: 'groups', label: '유사 그룹',  desc: '비슷한 사진끼리 묶었습니다. BEST 표시가 그룹에서 점수가 가장 높은 사진입니다. 다른 사진을 남기려면 "유지"를 누르세요.' },
+    { id: 'drop',   label: '제외 후보',  desc: '흐리거나 노출이 맞지 않거나 해상도가 낮은 사진, 그리고 그룹 안의 나머지 중복 사진입니다.' },
+    { id: 'all',    label: '전체',       desc: '폴더의 모든 사진입니다.' },
+  ];
+
+  // ---------- State ----------
+  const state = {
+    photos: [],
+    rootHandle: null,
+    rootName: '',
+    settings: { simTh: 10, blurTh: 60, minRes: 800 },
+    overrides: new Map(),   // id -> 'keep' | 'drop'
+    view: 'keep',
+    sort: 'score',
+    scoreBin: null,
+    page: 1,
+    analyzing: false,
+    derived: null,
+    lbList: [],
+    lbIndex: -1,
+    lbUrl: null,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const fmtBytes = (b) => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
+  const fmtDate = (t) => { const d = new Date(t); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
+  function toast(msg, ms = 3200) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove('show'), ms);
+  }
+
+  // ---------- File collection ----------
+  async function collectFromHandle(dirHandle, prefix = '') {
+    const out = [];
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (name.startsWith('.') || name.startsWith('_선별')) continue;
+      if (handle.kind === 'directory') {
+        out.push(...await collectFromHandle(handle, prefix + name + '/'));
+      } else if (IMG_RE.test(name)) {
+        out.push({ path: prefix + name, name, getFile: () => handle.getFile() });
+      }
+    }
+    return out;
+  }
+
+  function collectFromFileList(list) {
+    return Array.from(list)
+      .filter((f) => IMG_RE.test(f.name) && !/(^|\/)(\.|_선별)/.test(f.webkitRelativePath || f.name))
+      .map((f) => {
+        const rel = f.webkitRelativePath || f.name;
+        return { path: rel.split('/').slice(1).join('/') || f.name, name: f.name, getFile: async () => f };
+      });
+  }
+
+  async function readAllEntries(dirEntry) {
+    const reader = dirEntry.createReader();
+    const all = [];
+    while (true) {
+      const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+      if (!batch.length) return all;
+      all.push(...batch);
+    }
+  }
+
+  // prefix = path of the entry's parent, relative to the dropped root folder
+  async function collectFromEntry(entry, prefix = '') {
+    if (entry.name.startsWith('.') || entry.name.startsWith('_선별')) return [];
+    if (entry.isFile) {
+      if (!IMG_RE.test(entry.name)) return [];
+      return [{ path: prefix + entry.name, name: entry.name, getFile: () => new Promise((res, rej) => entry.file(res, rej)) }];
+    }
+    const out = [];
+    for (const child of await readAllEntries(entry)) out.push(...await collectFromEntry(child, prefix + entry.name + '/'));
+    return out;
+  }
+
+  async function pickFolder() {
+    if (state.analyzing) return;
+    if (window.showDirectoryPicker) {
+      try {
+        const handle = await window.showDirectoryPicker({ id: 'photo-sorter', mode: 'read' });
+        state.rootHandle = handle;
+        const items = await collectFromHandle(handle);
+        start(items, handle.name);
+      } catch (e) {
+        if (e.name !== 'AbortError') { console.error(e); toast('폴더를 여는 중 문제가 생겼어요: ' + e.message); }
+      }
+    } else {
+      $('dirInput').click();
+    }
+  }
+
+  $('dirInput').addEventListener('change', (e) => {
+    const files = e.target.files;
+    if (!files || !files.length) return;
+    state.rootHandle = null;
+    const root = (files[0].webkitRelativePath || '').split('/')[0] || '선택한 폴더';
+    start(collectFromFileList(files), root);
+    e.target.value = '';
+  });
+
+  // Drag & drop
+  const drop = $('drop');
+  ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('over')));
+  drop.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const dtItems = Array.from(e.dataTransfer.items || []);
+    // Chrome/Edge: a real handle lets us copy results back into the folder later.
+    const handlePromises = dtItems.map((it) => it.getAsFileSystemHandle ? it.getAsFileSystemHandle() : null);
+    const entries = dtItems.map((it) => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    try {
+      const handles = (await Promise.all(handlePromises)).filter(Boolean);
+      const dirHandle = handles.find((h) => h.kind === 'directory');
+      if (dirHandle && handles.length === 1) {
+        state.rootHandle = dirHandle;
+        start(await collectFromHandle(dirHandle), dirHandle.name);
+        return;
+      }
+      state.rootHandle = null;
+      let items = [];
+      for (const en of entries) {
+        if (en.isDirectory) {
+          for (const child of await readAllEntries(en)) items.push(...await collectFromEntry(child, ''));
+        } else items.push(...await collectFromEntry(en, ''));
+      }
+      start(items, entries.length === 1 ? entries[0].name : '끌어온 항목');
+    } catch (err) {
+      console.error(err);
+      toast('끌어온 폴더를 읽지 못했어요. "사진 폴더 선택" 버튼을 이용해 주세요.');
+    }
+  });
+
+  // ---------- Analysis ----------
+  function makeCanvas(w, h) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return c;
+  }
+
+  async function analyze(item, id) {
+    const file = await item.getFile();
+    const base = { id, name: item.name, path: item.path, file, size: file.size, lastModified: file.lastModified };
+    let bmp;
+    try {
+      bmp = await createImageBitmap(file);
+    } catch (e) {
+      return { ...base, error: true };
+    }
+    try {
+      const w = bmp.width, h = bmp.height;
+
+      // Grayscale at analysis size
+      const s = Math.min(1, ANALYSIS_SIZE / Math.max(w, h));
+      const aw = Math.max(3, Math.round(w * s)), ah = Math.max(3, Math.round(h * s));
+      const ac = makeCanvas(aw, ah);
+      const actx = ac.getContext('2d', { willReadFrequently: true });
+      actx.drawImage(bmp, 0, 0, aw, ah);
+      const px = actx.getImageData(0, 0, aw, ah).data;
+      const n = aw * ah;
+      const gray = new Float32Array(n);
+      let sum = 0, sum2 = 0, lo = 0, hi = 0;
+      for (let i = 0, j = 0; i < n; i++, j += 4) {
+        const g = 0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2];
+        gray[i] = g; sum += g; sum2 += g * g;
+        if (g < 12) lo++; else if (g > 245) hi++;
+      }
+      const mean = sum / n;
+      const std = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+
+      // Laplacian variance = sharpness
+      let ls = 0, ls2 = 0, lc = 0;
+      for (let y = 1; y < ah - 1; y++) {
+        const row = y * aw;
+        for (let x = 1; x < aw - 1; x++) {
+          const i = row + x;
+          const l = 4 * gray[i] - gray[i - 1] - gray[i + 1] - gray[i - aw] - gray[i + aw];
+          ls += l; ls2 += l * l; lc++;
+        }
+      }
+      const lm = ls / lc;
+      const sharp = ls2 / lc - lm * lm;
+
+      // dHash (64 bit) on 9x8 grayscale
+      const hc = makeCanvas(9, 8);
+      const hctx = hc.getContext('2d', { willReadFrequently: true });
+      hctx.imageSmoothingQuality = 'high';
+      hctx.drawImage(ac, 0, 0, 9, 8);
+      const hp = hctx.getImageData(0, 0, 9, 8).data;
+      let h1 = 0, h2 = 0, bit = 0;
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 8; x++) {
+          const a = (y * 9 + x) * 4, b = a + 4;
+          const ga = hp[a] * 0.299 + hp[a + 1] * 0.587 + hp[a + 2] * 0.114;
+          const gb = hp[b] * 0.299 + hp[b + 1] * 0.587 + hp[b + 2] * 0.114;
+          if (ga > gb) { if (bit < 32) h1 |= (1 << bit); else h2 |= (1 << (bit - 32)); }
+          bit++;
+        }
+      }
+
+      // Thumbnail
+      const ts = Math.min(1, THUMB_SIZE / Math.max(w, h));
+      const tc = makeCanvas(Math.max(1, Math.round(w * ts)), Math.max(1, Math.round(h * ts)));
+      tc.getContext('2d').drawImage(bmp, 0, 0, tc.width, tc.height);
+      const blob = await new Promise((res) => tc.toBlob(res, 'image/jpeg', 0.82));
+      const thumb = blob ? URL.createObjectURL(blob) : '';
+
+      return {
+        ...base, w, h, mean: mean / 255, std: std / 255,
+        loClip: lo / n, hiClip: hi / n, sharp, hash: [h1 >>> 0, h2 >>> 0], thumb,
+      };
+    } finally {
+      bmp.close && bmp.close();
+    }
+  }
+
+  async function start(items, rootName) {
+    if (!items.length) { toast('이 폴더에서 사진을 찾지 못했어요.'); return; }
+    // Release previous thumbnails
+    state.photos.forEach((p) => p.thumb && URL.revokeObjectURL(p.thumb));
+    Object.assign(state, { photos: [], overrides: new Map(), view: 'keep', scoreBin: null, page: 1, analyzing: true, rootName });
+    items.sort((a, b) => a.path.localeCompare(b.path, 'ko', { numeric: true }));
+
+    $('empty').hidden = true;
+    $('layout').classList.add('active');
+    $('pickBtnTop').hidden = false;
+    $('folderName').textContent = '📂 ' + rootName;
+    $('progress').classList.add('active');
+    $('exportNote').textContent = state.rootHandle
+      ? `"${rootName}" 폴더 안에 새 폴더를 만들어 복사합니다. 원본은 그대로 남습니다.`
+      : '이 브라우저는 폴더에 직접 쓰기를 지원하지 않아 복사 시 저장할 폴더를 다시 묻습니다. (Chrome·Edge 권장)';
+    showSkeleton();
+
+    const total = items.length;
+    const results = new Array(total);
+    let done = 0, next = 0, lastRender = 0;
+    const setProgress = () => {
+      $('progressBar').style.width = (done / total * 100).toFixed(1) + '%';
+      $('progressText').textContent = `분석 중 ${done.toLocaleString()} / ${total.toLocaleString()}`;
+    };
+    setProgress();
+
+    const worker = async () => {
+      while (next < total) {
+        const i = next++;
+        try { results[i] = await analyze(items[i], i); }
+        catch (e) { console.warn(items[i].path, e); results[i] = { id: i, name: items[i].name, path: items[i].path, error: true, size: 0, lastModified: 0 }; }
+        done++;
+        setProgress();
+        const now = performance.now();
+        if (now - lastRender > 1500) {
+          lastRender = now;
+          state.photos = results.filter(Boolean);
+          render();
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, worker));
+
+    state.photos = results;
+    state.analyzing = false;
+    $('progressText').textContent = `완료 · ${total.toLocaleString()}장`;
+    setTimeout(() => { if (!state.analyzing) $('progress').classList.remove('active'); }, 2500);
+    render();
+    const fails = results.filter((p) => p.error).length;
+    toast(`${total.toLocaleString()}장 분석 완료` + (fails ? ` · ${fails}장은 열 수 없는 형식(HEIC 등)이라 제외했어요` : ''));
+  }
+
+  // ---------- Classification (derived, no re-analysis) ----------
+  function popcnt(x) {
+    x -= (x >>> 1) & 0x55555555;
+    x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
+    return (((x + (x >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
+  }
+
+  function scoreOf(p) {
+    const sharpS = clamp((Math.log(p.sharp + 1) - Math.log(10)) / (Math.log(800) - Math.log(10)));
+    const expoS = clamp(1 - Math.abs(p.mean - 0.5) * 1.8 - Math.max(0, p.hiClip - 0.05) * 2 - Math.max(0, p.loClip - 0.1) * 1.5);
+    const contrastS = clamp(p.std / 0.22);
+    const resS = clamp(Math.min(p.w, p.h) / 2000);
+    return Math.round(100 * (0.5 * sharpS + 0.25 * expoS + 0.1 * contrastS + 0.15 * resS));
+  }
+
+  function classify() {
+    const { simTh, blurTh, minRes } = state.settings;
+    const ok = state.photos.filter((p) => !p.error);
+    const failed = state.photos.filter((p) => p.error);
+
+    // Union-find grouping by Hamming distance
+    const parent = ok.map((_, i) => i);
+    const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    for (let i = 0; i < ok.length; i++) {
+      const [a1, a2] = ok[i].hash;
+      for (let j = i + 1; j < ok.length; j++) {
+        const [b1, b2] = ok[j].hash;
+        if (popcnt(a1 ^ b1) + popcnt(a2 ^ b2) <= simTh) {
+          const ri = find(i), rj = find(j);
+          if (ri !== rj) parent[rj] = ri;
+        }
+      }
+    }
+
+    const info = new Map();
+    ok.forEach((p) => {
+      const issues = [];
+      if (p.sharp < blurTh) issues.push('blur');
+      if (p.mean < 0.16 || p.loClip > 0.55) issues.push('dark');
+      if (p.mean > 0.86 || p.hiClip > 0.4) issues.push('bright');
+      if (Math.min(p.w, p.h) < minRes) issues.push('lowres');
+      info.set(p.id, { score: scoreOf(p), issues, group: null, best: false });
+    });
+
+    const buckets = new Map();
+    ok.forEach((p, i) => {
+      const r = find(i);
+      if (!buckets.has(r)) buckets.set(r, []);
+      buckets.get(r).push(p);
+    });
+    const groups = [];
+    for (const members of buckets.values()) {
+      if (members.length < 2) continue;
+      // Prefer photos without quality issues, then higher score
+      members.sort((a, b) => {
+        const ia = info.get(a.id), ib = info.get(b.id);
+        return (ia.issues.length > 0) - (ib.issues.length > 0) || ib.score - ia.score;
+      });
+      const gid = groups.length + 1;
+      members.forEach((p, k) => {
+        const inf = info.get(p.id);
+        inf.group = gid;
+        if (k === 0) inf.best = true; else inf.issues.push('dup');
+      });
+      groups.push({ id: gid, members });
+    }
+    groups.sort((a, b) => b.members.length - a.members.length);
+    groups.forEach((g, i) => { g.label = i + 1; g.members.forEach((p) => { info.get(p.id).groupLabel = i + 1; }); });
+
+    ok.forEach((p) => {
+      const inf = info.get(p.id);
+      const quality = inf.issues.filter((x) => x !== 'dup');
+      inf.auto = quality.length ? 'drop' : inf.issues.includes('dup') ? 'dup' : 'keep';
+      const ov = state.overrides.get(p.id);
+      inf.status = ov === 'keep' ? 'keep' : ov === 'drop' ? 'drop' : inf.auto;
+    });
+    failed.forEach((p) => info.set(p.id, { score: 0, issues: ['error'], status: 'drop', auto: 'drop', group: null }));
+
+    const count = (fn) => state.photos.reduce((n, p) => n + (fn(info.get(p.id), p) ? 1 : 0), 0);
+    return {
+      info, groups,
+      stats: {
+        total: state.photos.length,
+        keep: count((i) => i.status === 'keep'),
+        dup: count((i) => i.status === 'dup'),
+        drop: count((i) => i.status === 'drop'),
+        blur: count((i) => i.issues.includes('blur')),
+        dark: count((i) => i.issues.includes('dark')),
+        bright: count((i) => i.issues.includes('bright')),
+        lowres: count((i) => i.issues.includes('lowres')),
+        error: failed.length,
+        inGroups: groups.reduce((n, g) => n + g.members.length, 0),
+      },
+    };
+  }
+
+  // ---------- Rendering ----------
+  function showSkeleton() {
+    $('content').innerHTML = `<div class="grid">${'<div class="skeleton"></div>'.repeat(12)}</div>`;
+  }
+
+  function render() {
+    state.derived = classify();
+    renderKpis();
+    renderOverview();
+    renderTabs();
+    renderContent();
+  }
+
+  function renderKpis() {
+    const s = state.derived.stats;
+    const pct = (v) => s.total ? Math.round(v / s.total * 100) + '%' : '–';
+    const k = [
+      { label: '전체 사진', value: s.total, sub: s.error ? `읽기 실패 ${s.error}장` : '하위 폴더 포함' },
+      { label: '추천', value: s.keep, sub: `전체의 ${pct(s.keep)}`, dot: 'var(--ok)' },
+      { label: '유사 그룹', value: state.derived.groups.length, sub: `${s.inGroups.toLocaleString()}장이 묶임` },
+      { label: '중복 컷', value: s.dup, sub: '그룹 BEST 외 같은 장면', dot: 'var(--warn)' },
+      { label: '흐린 사진', value: s.blur, sub: `전체의 ${pct(s.blur)}`, dot: 'var(--bad)' },
+      { label: '노출 문제', value: s.dark + s.bright, sub: `어두움 ${s.dark} · 밝음 ${s.bright}`, dot: 'var(--bad)' },
+    ];
+    $('kpis').innerHTML = k.map((x) => `
+      <div class="kpi">
+        <div class="kpi-label">${x.dot ? `<span class="dot" style="background:${x.dot}"></span>` : ''}${x.label}</div>
+        <div class="kpi-value">${x.value.toLocaleString()}</div>
+        <div class="kpi-sub">${x.sub}</div>
+      </div>`).join('');
+  }
+
+  function renderOverview() {
+    const { info, stats } = state.derived;
+    const bins = new Array(10).fill(0);
+    state.photos.forEach((p) => { if (!p.error) bins[Math.min(9, Math.floor(info.get(p.id).score / 10))]++; });
+    const max = Math.max(1, ...bins);
+    $('hist').innerHTML = bins.map((v, i) => `
+      <button class="hist-col" data-bin="${i}" title="${i * 10}~${i * 10 + 9}점: ${v}장" aria-label="${i * 10}에서 ${i * 10 + 9}점 ${v}장" style="background:none;border:0;padding:0">
+        <span>${v || ''}</span>
+        <div class="hist-bar ${i < 4 ? 'low' : ''}" style="height:${(v / max * 80).toFixed(1)}%; ${state.scoreBin === i ? 'outline:2px solid var(--text);' : ''}"></div>
+        <span>${i * 10}</span>
+      </button>`).join('');
+
+    const t = Math.max(1, stats.total);
+    $('split').innerHTML = ['keep', 'dup', 'drop'].map((k) => stats[k] ? `<div style="width:${stats[k] / t * 100}%;background:${STATUS[k].color}"></div>` : '').join('');
+    $('legend').innerHTML = ['keep', 'dup', 'drop'].map((k) => `
+      <div class="legend-row"><span class="dot" style="background:${STATUS[k].color}"></span>${STATUS[k].label}
+      <b>${stats[k].toLocaleString()}장 (${Math.round(stats[k] / t * 100)}%)</b></div>`).join('');
+    const reasons = [['blur', stats.blur], ['dark', stats.dark], ['bright', stats.bright], ['lowres', stats.lowres], ['error', stats.error]].filter(([, v]) => v);
+    $('reasons').innerHTML = reasons.map(([k, v]) => `<span class="chip chip-bad">${ISSUE_LABEL[k]} ${v}</span>`).join('');
+  }
+
+  function viewList(view) {
+    const { info } = state.derived;
+    let list = state.photos;
+    if (view === 'keep') list = list.filter((p) => info.get(p.id).status === 'keep');
+    else if (view === 'drop') list = list.filter((p) => info.get(p.id).status !== 'keep');
+    if (state.scoreBin !== null) list = list.filter((p) => !p.error && Math.min(9, Math.floor(info.get(p.id).score / 10)) === state.scoreBin);
+    return sortList(list);
+  }
+
+  function sortList(list) {
+    const { info } = state.derived;
+    const by = {
+      'score': (a, b) => info.get(b.id).score - info.get(a.id).score,
+      'score-asc': (a, b) => info.get(a.id).score - info.get(b.id).score,
+      'date': (a, b) => a.lastModified - b.lastModified,
+      'name': (a, b) => a.path.localeCompare(b.path, 'ko', { numeric: true }),
+    }[state.sort];
+    return list.slice().sort(by);
+  }
+
+  function renderTabs() {
+    const counts = {
+      keep: state.derived.stats.keep,
+      groups: state.derived.groups.length,
+      drop: state.derived.stats.total - state.derived.stats.keep,
+      all: state.derived.stats.total,
+    };
+    $('tabs').innerHTML = TABS.map((t) => `
+      <button class="tab" role="tab" data-view="${t.id}" aria-selected="${state.view === t.id}">${t.label}<span class="count">${counts[t.id].toLocaleString()}</span></button>`).join('');
+    const tab = TABS.find((t) => t.id === state.view);
+    $('tabDesc').innerHTML = esc(tab.desc) + (state.scoreBin !== null
+      ? ` <button class="btn btn-sm" id="clearBin">점수 ${state.scoreBin * 10}~${state.scoreBin * 10 + 9}점만 보는 중 · 해제</button>` : '');
+  }
+
+  function cardHtml(p) {
+    const inf = state.derived.info.get(p.id);
+    const ov = state.overrides.get(p.id);
+    const chips = [];
+    chips.push(`<span class="chip ${STATUS[inf.status].chip}">${STATUS[inf.status].label}${ov ? ' · 수동' : ''}</span>`);
+    inf.issues.filter((x) => x !== 'dup').forEach((x) => chips.push(`<span class="chip chip-bad">${ISSUE_LABEL[x]}</span>`));
+    if (inf.groupLabel) chips.push(`<span class="chip chip-info">그룹 ${inf.groupLabel}</span>`);
+    const meta = p.error ? '열 수 없는 형식' : `${p.w}×${p.h} · ${fmtBytes(p.size)}`;
+    return `
+      <article class="card ${inf.status === 'keep' ? 'is-keep' : ''} ${inf.status === 'drop' ? 'is-drop' : ''}" data-id="${p.id}">
+        <button class="thumb" data-open="${p.id}" aria-label="${esc(p.name)} 크게 보기">
+          ${p.thumb ? `<img src="${p.thumb}" alt="" loading="lazy" decoding="async">` : ''}
+          ${inf.best ? '<span class="badge-best">★ BEST</span>' : ''}
+          ${p.error ? '' : `<span class="score" title="품질 점수">${inf.score}</span>`}
+        </button>
+        <div class="card-body">
+          <div class="card-name" title="${esc(p.path)}">${esc(p.name)}</div>
+          <div class="card-meta">${meta}</div>
+          <div class="chips">${chips.join('')}</div>
+          <div class="card-actions">
+            <button class="toggle ${ov === 'keep' ? 'on-keep' : ''}" data-act="keep" data-id="${p.id}" aria-pressed="${ov === 'keep'}">✓ 유지</button>
+            <button class="toggle ${ov === 'drop' ? 'on-drop' : ''}" data-act="drop" data-id="${p.id}" aria-pressed="${ov === 'drop'}">✕ 제외</button>
+          </div>
+        </div>
+      </article>`;
+  }
+
+  function renderContent() {
+    const el = $('content');
+    if (!state.photos.length) { showSkeleton(); return; }
+
+    if (state.view === 'groups') {
+      let groups = state.derived.groups;
+      if (state.scoreBin !== null) {
+        groups = groups.filter((g) => g.members.some((p) => Math.min(9, Math.floor(state.derived.info.get(p.id).score / 10)) === state.scoreBin));
+      }
+      if (!groups.length) {
+        el.innerHTML = `<div class="no-result">비슷한 사진 그룹이 없어요.<br>왼쪽 <b>유사 사진 판정</b> 값을 높이면 더 넓게 묶습니다.</div>`;
+        return;
+      }
+      const shown = groups.slice(0, state.page * 40);
+      el.innerHTML = `<div class="groups">${shown.map((g) => {
+        const kept = g.members.filter((p) => state.derived.info.get(p.id).status === 'keep').length;
+        return `
+        <section class="group">
+          <div class="group-head">
+            <h4>그룹 ${g.label}</h4>
+            <span class="muted">${g.members.length}장 · 유지 ${kept}장</span>
+            <div style="flex:1"></div>
+            <button class="btn btn-sm" data-group-reset="${g.id}">자동 판정으로 되돌리기</button>
+          </div>
+          <div class="group-strip">${g.members.map(cardHtml).join('')}</div>
+        </section>`;
+      }).join('')}</div>${groups.length > shown.length ? `<div class="more"><button class="btn" id="moreBtn">그룹 더 보기 (${groups.length - shown.length}개 남음)</button></div>` : ''}`;
+      return;
+    }
+
+    const list = viewList(state.view);
+    if (!list.length) {
+      const msg = state.analyzing ? '분석이 진행 중이에요. 잠시만 기다려 주세요.'
+        : state.view === 'keep' ? '추천 조건을 만족하는 사진이 없어요.<br>왼쪽에서 <b>흐림 판정 기준</b>이나 <b>최소 해상도</b>를 낮춰 보세요.'
+        : '해당하는 사진이 없어요.';
+      el.innerHTML = `<div class="no-result">${msg}</div>`;
+      return;
+    }
+    const shown = list.slice(0, state.page * PAGE);
+    el.innerHTML = `<div class="grid">${shown.map(cardHtml).join('')}</div>` +
+      (list.length > shown.length ? `<div class="more"><button class="btn" id="moreBtn">더 보기 (${(list.length - shown.length).toLocaleString()}장 남음)</button></div>` : '');
+  }
+
+  // ---------- Interactions ----------
+  function setOverride(id, val) {
+    if (state.overrides.get(id) === val || val === null) state.overrides.delete(id);
+    else state.overrides.set(id, val);
+  }
+
+  function rerenderKeepScroll() {
+    const y = window.scrollY;
+    render();
+    window.scrollTo(0, y);
+  }
+
+  $('content').addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]');
+    if (act) { setOverride(+act.dataset.id, act.dataset.act); rerenderKeepScroll(); return; }
+    const open = e.target.closest('[data-open]');
+    if (open) {
+      const id = +open.dataset.open;
+      let list;
+      if (state.view === 'groups') {
+        const g = state.derived.groups.find((g) => g.members.some((p) => p.id === id));
+        list = g ? g.members : [state.photos[id]];
+      } else list = viewList(state.view);
+      openLightbox(list, list.findIndex((p) => p.id === id));
+      return;
+    }
+    const reset = e.target.closest('[data-group-reset]');
+    if (reset) {
+      const g = state.derived.groups.find((g) => g.id === +reset.dataset.groupReset);
+      g && g.members.forEach((p) => state.overrides.delete(p.id));
+      rerenderKeepScroll();
+      return;
+    }
+    if (e.target.id === 'moreBtn') { state.page++; renderContent(); }
+  });
+
+  $('tabs').addEventListener('click', (e) => {
+    const t = e.target.closest('[data-view]');
+    if (!t) return;
+    state.view = t.dataset.view; state.page = 1;
+    renderTabs(); renderContent();
+  });
+  $('tabs').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const i = TABS.findIndex((t) => t.id === state.view);
+    const ni = (i + (e.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length;
+    state.view = TABS[ni].id; state.page = 1;
+    renderTabs(); renderContent();
+    $('tabs').querySelector(`[data-view="${state.view}"]`).focus();
+  });
+
+  $('tabDesc').addEventListener('click', (e) => {
+    if (e.target.id === 'clearBin') { state.scoreBin = null; state.page = 1; render(); }
+  });
+
+  $('hist').addEventListener('click', (e) => {
+    const c = e.target.closest('[data-bin]');
+    if (!c) return;
+    const b = +c.dataset.bin;
+    state.scoreBin = state.scoreBin === b ? null : b;
+    if (state.scoreBin !== null && state.view === 'keep') state.view = 'all';
+    state.page = 1;
+    render();
+  });
+
+  $('sortSel').addEventListener('change', (e) => { state.sort = e.target.value; state.page = 1; renderContent(); });
+
+  const sliders = [
+    ['simTh', (v) => v <= 4 ? `엄격 (${v})` : v <= 12 ? `보통 (${v})` : `느슨 (${v})`],
+    ['blurTh', (v) => String(v)],
+    ['minRes', (v) => v ? `${v}px` : '제한 없음'],
+  ];
+  let sliderTimer;
+  sliders.forEach(([id, fmt]) => {
+    const input = $(id);
+    const sync = () => { $(id + 'Val').textContent = fmt(+input.value); };
+    sync();
+    input.addEventListener('input', () => {
+      state.settings[id] = +input.value;
+      sync();
+      clearTimeout(sliderTimer);
+      sliderTimer = setTimeout(() => { if (state.photos.length) { state.page = 1; render(); } }, 120);
+    });
+  });
+
+  $('pickBtn').addEventListener('click', pickFolder);
+  $('pickBtnTop').addEventListener('click', pickFolder);
+
+  // ---------- Lightbox ----------
+  function openLightbox(list, index) {
+    if (index < 0) return;
+    state.lbList = list; state.lbIndex = index;
+    $('lightbox').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    showLightbox();
+    $('lbClose').focus();
+  }
+
+  function closeLightbox() {
+    $('lightbox').classList.remove('open');
+    document.body.style.overflow = '';
+    if (state.lbUrl) { URL.revokeObjectURL(state.lbUrl); state.lbUrl = null; }
+    $('lbImg').removeAttribute('src');
+    rerenderKeepScroll();
+  }
+
+  function showLightbox() {
+    const p = state.lbList[state.lbIndex];
+    if (!p) return;
+    if (state.lbUrl) URL.revokeObjectURL(state.lbUrl);
+    state.lbUrl = p.file ? URL.createObjectURL(p.file) : null;
+    $('lbImg').src = state.lbUrl || p.thumb || '';
+    $('lbImg').alt = p.name;
+    $('lbName').textContent = p.path;
+    const inf = state.derived.info.get(p.id);
+    const ov = state.overrides.get(p.id);
+    const status = ov === 'keep' ? 'keep' : ov === 'drop' ? 'drop' : inf.auto;
+    $('lbChips').innerHTML = [`<span class="chip ${STATUS[status].chip}">${STATUS[status].label}${ov ? ' · 수동' : ''}</span>`]
+      .concat(inf.issues.filter((x) => x !== 'dup').map((x) => `<span class="chip chip-bad">${ISSUE_LABEL[x]}</span>`))
+      .concat(inf.best ? ['<span class="chip chip-info">★ 그룹 BEST</span>'] : []).join('');
+    const meter = (v) => `<div class="meter"><i style="width:${clamp(v) * 100}%"></i></div>`;
+    $('lbMetrics').innerHTML = p.error ? '<dt>상태</dt><dd>이 브라우저에서 열 수 없는 형식</dd>' : `
+      <dt>품질 점수</dt><dd><b>${inf.score}</b> / 100</dd>${meter(inf.score / 100)}
+      <dt>선명도</dt><dd>${Math.round(p.sharp)}</dd>${meter(Math.log(p.sharp + 1) / Math.log(800))}
+      <dt>평균 밝기</dt><dd>${Math.round(p.mean * 100)}%</dd>${meter(p.mean)}
+      <dt>대비</dt><dd>${Math.round(p.std * 100)}</dd>
+      <dt>하이라이트 날아감</dt><dd>${(p.hiClip * 100).toFixed(1)}%</dd>
+      <dt>암부 뭉침</dt><dd>${(p.loClip * 100).toFixed(1)}%</dd>
+      <dt>해상도</dt><dd>${p.w}×${p.h} (${(p.w * p.h / 1e6).toFixed(1)}MP)</dd>
+      <dt>파일 크기</dt><dd>${fmtBytes(p.size)}</dd>
+      <dt>수정 시각</dt><dd>${fmtDate(p.lastModified)}</dd>
+      ${inf.groupLabel ? `<dt>유사 그룹</dt><dd>그룹 ${inf.groupLabel}</dd>` : ''}
+      <dt>위치</dt><dd>${state.lbIndex + 1} / ${state.lbList.length}</dd>`;
+    $('lbKeep').className = 'toggle' + (ov === 'keep' ? ' on-keep' : '');
+    $('lbDrop').className = 'toggle' + (ov === 'drop' ? ' on-drop' : '');
+    $('lbPrev').disabled = state.lbIndex === 0;
+    $('lbNext').disabled = state.lbIndex === state.lbList.length - 1;
+  }
+
+  function lbStep(d) {
+    const ni = state.lbIndex + d;
+    if (ni < 0 || ni >= state.lbList.length) return;
+    state.lbIndex = ni; showLightbox();
+  }
+  function lbMark(val) {
+    const p = state.lbList[state.lbIndex];
+    if (!p) return;
+    setOverride(p.id, val);
+    state.derived = classify();
+    showLightbox();
+  }
+
+  $('lbClose').addEventListener('click', closeLightbox);
+  $('lbPrev').addEventListener('click', () => lbStep(-1));
+  $('lbNext').addEventListener('click', () => lbStep(1));
+  $('lbKeep').addEventListener('click', () => lbMark('keep'));
+  $('lbDrop').addEventListener('click', () => lbMark('drop'));
+  $('lightbox').addEventListener('click', (e) => { if (e.target.classList.contains('lb-stage')) closeLightbox(); });
+  document.addEventListener('keydown', (e) => {
+    if (!$('lightbox').classList.contains('open')) return;
+    const k = e.key.toLowerCase();
+    if (k === 'escape') closeLightbox();
+    else if (k === 'arrowleft') lbStep(-1);
+    else if (k === 'arrowright') lbStep(1);
+    else if (k === 'k') lbMark('keep');
+    else if (k === 'd') lbMark('drop');
+    else if (k === 'u') { const p = state.lbList[state.lbIndex]; if (p) { state.overrides.delete(p.id); state.derived = classify(); showLightbox(); } }
+  });
+
+  // ---------- Export ----------
+  async function getWritableRoot() {
+    if (state.rootHandle && state.rootHandle.requestPermission) {
+      const perm = await state.rootHandle.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') return state.rootHandle;
+    }
+    if (window.showDirectoryPicker) {
+      return window.showDirectoryPicker({ id: 'photo-sorter-out', mode: 'readwrite' });
+    }
+    return null;
+  }
+
+  function uniqueName(used, name) {
+    if (!used.has(name)) { used.add(name); return name; }
+    const dot = name.lastIndexOf('.');
+    const base = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
+    let i = 2;
+    while (used.has(`${base}_${i}${ext}`)) i++;
+    const n = `${base}_${i}${ext}`;
+    used.add(n);
+    return n;
+  }
+
+  async function copyTo(jobs, label) {
+    if (state.analyzing) { toast('분석이 끝난 뒤에 내보낼 수 있어요.'); return; }
+    if (!jobs.length) { toast('복사할 사진이 없어요.'); return; }
+    let root;
+    try { root = await getWritableRoot(); }
+    catch (e) { if (e.name !== 'AbortError') toast('폴더 쓰기 권한을 받지 못했어요.'); return; }
+    if (!root) { toast('이 브라우저는 폴더 복사를 지원하지 않아요. Chrome 또는 Edge에서 열거나 CSV로 저장해 주세요.', 5000); return; }
+
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '').replace(/^(\d{8})/, '$1_');
+    const outName = `_선별_${label}_${stamp}`;
+    const out = await root.getDirectoryHandle(outName, { create: true });
+    const dirCache = new Map();
+    const usedNames = new Map();
+    $('progress').classList.add('active');
+    let done = 0, failed = 0;
+    for (const { photo, sub } of jobs) {
+      try {
+        let dir = out;
+        if (sub) {
+          if (!dirCache.has(sub)) dirCache.set(sub, await out.getDirectoryHandle(sub, { create: true }));
+          dir = dirCache.get(sub);
+        }
+        if (!usedNames.has(sub)) usedNames.set(sub, new Set());
+        const fh = await dir.getFileHandle(uniqueName(usedNames.get(sub), photo.name), { create: true });
+        const w = await fh.createWritable();
+        await w.write(photo.file);
+        await w.close();
+      } catch (e) { console.warn(e); failed++; }
+      done++;
+      $('progressBar').style.width = (done / jobs.length * 100).toFixed(1) + '%';
+      $('progressText').textContent = `복사 중 ${done} / ${jobs.length}`;
+    }
+    $('progressText').textContent = `복사 완료 · ${done - failed}장`;
+    setTimeout(() => $('progress').classList.remove('active'), 2500);
+    toast(`"${outName}" 폴더에 ${done - failed}장 복사했어요` + (failed ? ` (${failed}장 실패)` : ''), 5000);
+  }
+
+  $('copyKeepBtn').addEventListener('click', () => {
+    if (!state.derived) return;
+    const jobs = state.photos.filter((p) => !p.error && state.derived.info.get(p.id).status === 'keep').map((photo) => ({ photo, sub: '' }));
+    copyTo(jobs, '추천');
+  });
+
+  $('copyGroupsBtn').addEventListener('click', () => {
+    if (!state.derived) return;
+    const jobs = [];
+    state.derived.groups.forEach((g) => g.members.forEach((photo) => jobs.push({ photo, sub: `그룹_${String(g.label).padStart(3, '0')}` })));
+    copyTo(jobs, '유사그룹');
+  });
+
+  $('csvBtn').addEventListener('click', () => {
+    if (!state.derived || !state.photos.length) { toast('먼저 폴더를 분석해 주세요.'); return; }
+    const head = ['경로', '파일명', '판정', '수동변경', '품질점수', '문제', '유사그룹', '그룹베스트', '선명도', '평균밝기(%)', '하이라이트(%)', '암부(%)', '가로', '세로', '파일크기(byte)', '수정시각'];
+    const rows = state.photos.map((p) => {
+      const i = state.derived.info.get(p.id);
+      return [p.path, p.name, STATUS[i.status].label, state.overrides.has(p.id) ? 'Y' : '', i.score,
+        i.issues.map((x) => ISSUE_LABEL[x]).join('/'), i.groupLabel || '', i.best ? 'Y' : '',
+        p.error ? '' : Math.round(p.sharp), p.error ? '' : Math.round(p.mean * 100),
+        p.error ? '' : (p.hiClip * 100).toFixed(1), p.error ? '' : (p.loClip * 100).toFixed(1),
+        p.w || '', p.h || '', p.size, p.lastModified ? fmtDate(p.lastModified) : ''];
+    });
+    const csv = '﻿' + [head, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `사진선별_${state.rootName}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  window.addEventListener('beforeunload', () => state.photos.forEach((p) => p.thumb && URL.revokeObjectURL(p.thumb)));
+})();
+</script>
+</body>
+</html>
