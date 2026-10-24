@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>render harness</title></head>
+<body style="margin:0;background:#111">
+<canvas id="c" style="width:960px"></canvas>
+<script type="module">
+import './fonts.css';
+import { Renderer } from './engine/renderer.js';
+import { normalizeProject } from './engine/presets.js';
+let r;
+window.setup = async (proj, w = 1920, h = 1080) => {
+  r?.dispose();
+  const old = document.getElementById('c');
+  const c = document.createElement('canvas');
+  c.id = 'c';
+  c.style.width = '960px';
+  old.replaceWith(c);
+  r = new Renderer({ canvas: c, width: w, height: h });
+  const tl = r.setProject(normalizeProject(proj));
+  await r.prepareFonts();
+  r.warmup();
+  return { total: tl.total, segs: tl.segments.map(s => ({ type: s.type, start: s.start, dur: s.dur, trans: s.transIn, tIn: s.tIn })) };
+};
+window.frame = async (t) => { await r.renderAt(t); return document.getElementById('c').toDataURL('image/jpeg', 0.9); };
+window.pixels = async (t) => { await r.renderAt(t); const b = r.readPixels(); return Array.from(b.subarray(0, 64)); };
+window.compare = async (t) => {
+  r.compositor.capture = null;
+  await r.renderAt(t);
+  const rgba = r.readPixels();
+  const cap = r.compositor.setupCapture(true);
+  await r.renderAt(t);
+  r.compositor.captureStart(0);
+  const yuv = await r.compositor.captureFinish(0, new Uint8Array(cap.bytes));
+  const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 32768) s += String.fromCharCode.apply(null, u8.subarray(i, i + 32768)); return btoa(s); };
+  return { format: cap.format, rgba: b64(rgba), yuv: b64(yuv) };
+};
+window.profile = async (ts) => {
+  const { drawSegment } = await import('./engine/scenes.js');
+  const { activeAt } = await import('./engine/timeline.js');
+  const out = [];
+  for (const t of ts) {
+    await r.ensureAt(t);
+    const act = activeAt(r.tl, t);
+    const N = 6;
+    let d = 0, u = 0, g = 0;
+    for (let k = 0; k < N; k++) {
+      const tt = t + k / 30;
+      let a = performance.now();
+      drawSegment(r.ctxA, act.from, tt - act.from.start, r.env);
+      if (act.to) drawSegment(r.ctxB, act.to, tt - act.to.start, r.env);
+      r.ctxA.getImageData(0, 0, 1, 1); // 래스터 완료 대기
+      let b = performance.now();
+      r.compositor.upload('from', r.sceneA, false);
+      if (act.to) r.compositor.upload('to', r.sceneB, false);
+      r.compositor.gl.finish();
+      let c = performance.now();
+      r.renderSync(tt);
+      r.compositor.gl.finish();
+      let e = performance.now();
+      d += b - a; u += c - b; g += e - c;
+    }
+    out.push({ t, seg: act.from.type + (act.to ? '>' + act.to.type + ':' + act.transition : ''), draw: +(d / N).toFixed(1), upload: +(u / N).toFixed(1), fullFrame: +(g / N).toFixed(1) });
+  }
+  return out;
+};
+window.ready = true;
+</script></body></html>

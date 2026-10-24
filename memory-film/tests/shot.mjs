@@ -1,0 +1,18 @@
+import { createServer } from 'vite';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PW_PATH || 'playwright');
+const root = path.dirname(fileURLToPath(import.meta.url));
+const [page_, out, w = 1800, h = 900] = process.argv.slice(2);
+const server = await createServer({ configFile: path.join(root, '..', 'vite.config.js'), server: { port: 5198 }, logLevel: 'error' });
+await server.listen();
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: +w, height: +h } });
+p.on('pageerror', (e) => console.log('[pageerror]', e.message));
+p.on('console', (m) => m.type() === 'error' && console.log('[console]', m.text()));
+await p.goto('http://localhost:5198/' + page_);
+await p.waitForFunction(() => window.done, null, { timeout: 60000 });
+await p.screenshot({ path: out });
+await b.close(); await server.close();

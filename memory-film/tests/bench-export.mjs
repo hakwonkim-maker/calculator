@@ -1,0 +1,36 @@
+// 내보내기 속도 벤치마크 (같은 프로젝트로 버전 비교): MF_APP=<앱 폴더>
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+const require = createRequire(import.meta.url);
+const { _electron } = require(process.env.PW_PATH || 'playwright');
+const root = path.dirname(fileURLToPath(import.meta.url));
+const appDir = process.env.MF_APP || path.join(root, '..');
+const fixtures = path.join(root, 'fixtures');
+const res = process.env.MF_RES || 'HD 720p';
+const outFile = path.join(root, 'out', 'bench.mp4');
+fs.rmSync(outFile, { force: true });
+const app = await _electron.launch({ executablePath: path.join(root, '..', 'node_modules', 'electron', 'dist', 'electron'), args: [appDir, '--no-sandbox', '--user-data-dir=' + fs.mkdtempSync('/tmp/claude-0/mfb-')] });
+await app.evaluate(({ dialog }, { fixtures, outFile }) => {
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixtures] });
+  dialog.showSaveDialog = async () => ({ canceled: false, filePath: outFile });
+}, { fixtures, outFile });
+const win = await app.firstWindow();
+await win.waitForSelector('.tpl-modal');
+await win.click('.tpl-grid .pcard:has-text("창립")');
+await win.click('.empty-card .btn-primary');
+await win.waitForSelector('.card-slot');
+await win.waitForTimeout(1500);
+await win.click('.step:has-text("내보내기")');
+await win.click(`.res:has-text("${res}")`);
+const t0 = Date.now();
+await win.click('.panel .btn-primary:has-text("영상 파일 만들기")');
+await win.waitForSelector('.done-badge, .error-box', { timeout: 1700000 });
+const secs = (Date.now() - t0) / 1000;
+const err = await win.$('.error-box');
+if (err) console.log('ERROR', await err.textContent());
+await app.close();
+const { execSync } = await import('node:child_process');
+const dur = parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 ${outFile}`).toString());
+console.log(`${path.basename(path.dirname(appDir))}/${path.basename(appDir)} ${res}: video ${dur.toFixed(1)}s, export ${secs.toFixed(1)}s, ${(dur * 30 / secs).toFixed(2)} fps`);
