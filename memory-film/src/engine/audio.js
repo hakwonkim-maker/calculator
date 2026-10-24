@@ -41,8 +41,11 @@ export class AudioPreview {
       }
     }
     const when = ctx.currentTime + 0.05;
+    // 출력 지연 보정: 화면과 소리가 어긋나지 않도록 영상 시계를 소리에 맞춤
+    this.latency = (ctx.outputLatency || ctx.baseLatency || 0);
     const usable = tracks.filter((t) => this.buffers.has(t.path));
     if (!usable.length) return when;
+    this.hasAudio = true;
 
     const vol = Number(music.volume ?? 1);
     const fi = Number(music.fadeIn) || 0;
@@ -61,12 +64,16 @@ export class AudioPreview {
     let s = 0;
     let i = 0;
     let guard = 0;
+    let xPrev = 0; // 앞 곡과 겹치는 길이 (페이드인)
     while (s < total && guard++ < 400) {
       const tr = usable[i % usable.length];
       const buf = this.buffers.get(tr.path);
       const d = buf.duration;
-      const next = usable[(i + 1) % usable.length];
-      const x = Math.min(xf, d / 2, next ? this.buffers.get(next.path).duration / 2 : xf);
+      const isLast = !music.loop && i + 1 >= usable.length;
+      const next = isLast ? null : usable[(i + 1) % usable.length];
+      // FFmpeg acrossfade와 같은 규칙: 마지막 곡은 끝에서 크로스페이드하지 않음
+      const x = next ? Math.min(xf, d / 2, this.buffers.get(next.path).duration / 2) : 0;
+      const xi = xPrev;
       const end = s + d;
       if (end > fromT) {
         const src = ctx.createBufferSource();
@@ -77,26 +84,28 @@ export class AudioPreview {
         const offset = Math.max(0, fromT - s);
         const gv = (t) => {
           let a = 1;
-          if (i > 0 && x > 0) a = Math.min(a, (t - s) / x);
+          if (xi > 0) a = Math.min(a, (t - s) / xi);
           if (x > 0) a = Math.min(a, (end - t) / x);
           return Math.max(0, Math.min(1, a));
         };
         g.gain.setValueAtTime(gv(Math.max(fromT, s)), startAt);
-        if (i > 0 && x > 0 && fromT < s + x) g.gain.linearRampToValueAtTime(1, when + (s + x - fromT));
+        if (xi > 0 && fromT < s + xi) g.gain.linearRampToValueAtTime(1, when + (s + xi - fromT));
         if (x > 0 && fromT < end - x) g.gain.setValueAtTime(1, when + (end - x - fromT));
         if (x > 0) g.gain.linearRampToValueAtTime(0, when + Math.max(0, end - fromT));
         src.start(startAt, offset);
         this.sources.push(src);
       }
-      if (!music.loop && i + 1 >= usable.length) break;
+      if (isLast) break;
       s = end - x;
+      xPrev = x;
       i++;
     }
     return when;
   }
 
+  /** 영상 시계 = 실제로 스피커에서 나오고 있는 소리의 시각 */
   now() {
-    return this.ctx ? this.ctx.currentTime : performance.now() / 1000;
+    return this.ctx ? this.ctx.currentTime - (this.latency || 0) : performance.now() / 1000;
   }
 
   stop() {

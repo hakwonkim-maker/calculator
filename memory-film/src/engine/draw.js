@@ -124,7 +124,7 @@ function bokehSprite(color, kind) {
  */
 export function drawBokeh(ctx, W, H, t, opts) {
   const { seed = 1, discs = 26, sparks = 60, color = '#f0cf82', speed = 1, alpha = 1, blurDiscs = true } = opts;
-  const u = H / 1080;
+  const u = Math.min(W, H) / 1080;
   const r = rng(hashStr('bokeh' + seed));
   const disc = bokehSprite(color, 'disc');
   const spark = bokehSprite(color, 'spark');

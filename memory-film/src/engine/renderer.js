@@ -3,7 +3,7 @@
 // 미리보기와 내보내기가 같은 코드를 쓰므로 결과가 동일하다.
 
 import { Compositor } from './compositor.js';
-import { AssetManager } from './assets.js';
+import { AssetManager, itemKey } from './assets.js';
 import { buildTimeline, activeAt } from './timeline.js';
 import { drawSegment, lookAmountFor, captionAccent } from './scenes.js';
 import { THEMES, TYPOGRAPHY, LOOKS } from './presets.js';
@@ -41,7 +41,8 @@ export class Renderer {
     this.env = {
       W: this.W,
       H: this.H,
-      u: this.H / 1080,
+      u: Math.min(this.W, this.H) / 1080,
+      oy: (this.H - 1080 * (Math.min(this.W, this.H) / 1080)) / 2,
       theme,
       typo: TYPOGRAPHY[project.style.typography] || TYPOGRAPHY.classic,
       project,
@@ -75,11 +76,16 @@ export class Renderer {
     const thumbs = [];
     if (!seg) return { full, thumbs };
     const logo = this.project.text.logo;
-    if (seg.type === 'photo') full.push(seg.item.path);
-    else if (seg.type === 'chapter' && seg.nextPhoto) full.push(seg.nextPhoto.path);
-    else if (seg.type === 'intro' || seg.type === 'outro') {
+    const gallery = () => thumbs.push(...this.tl.gallery.map(itemKey));
+    if (seg.type === 'photo') full.push(itemKey(seg.item));
+    else if (seg.type === 'chapter' && seg.nextPhoto) full.push(itemKey(seg.nextPhoto));
+    if ((seg.type === 'photo' || seg.type === 'chapter') && logo && this.project.style.watermark) thumbs.push(logo);
+    if (seg.type === 'intro' || seg.type === 'outro') {
       if (logo) thumbs.push(logo);
-      if (seg.type === 'outro' || this.project.intro.style === 'mosaic') thumbs.push(...this.tl.gallery.map((p) => p.path));
+      const st = this.project.intro.style;
+      if (seg.type === 'intro' && (st === 'mosaic' || st === 'polaroid')) gallery();
+      if (seg.type === 'intro' && st === 'cinematic' && this.tl.gallery[0]) full.push(itemKey(this.tl.gallery[0]));
+      if (seg.type === 'outro' && this.project.outro.style === 'gallery') gallery();
     }
     return { full, thumbs };
   }

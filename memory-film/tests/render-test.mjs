@@ -32,8 +32,16 @@ const scenarios = {
   mosaic: { intro: { style: 'mosaic', duration: 10 }, style: { theme: 'navy', typography: 'modern' } },
   light: { intro: { style: 'light', duration: 10 }, style: { theme: 'ivory', typography: 'warm' } },
   royal: { intro: { style: 'golden', duration: 10 }, style: { theme: 'burgundy', typography: 'royal' } },
+  cinematic: { intro: { style: 'cinematic', duration: 10 }, style: { theme: 'navy', typography: 'royal' }, outro: { style: 'credits' }, textx: { credits: '# 함께한 사람들\n기획\t홍길동\n진행\t김철수\n\n촬영 : 이영희\n모든 임직원 여러분' } },
+  polaroid: { intro: { style: 'polaroid', duration: 10 }, style: { theme: 'sage', typography: 'diary' } },
+  bloom: { intro: { style: 'bloom', duration: 11 }, style: { theme: 'rose', typography: 'romantic' }, textx: { number: '', eyebrow: 'Our Wedding Day', title: '민준 그리고 서연', subtitle: '2026. 10. 24' } },
+  minimal: { intro: { style: 'minimal', duration: 10 }, style: { theme: 'sky', typography: 'playful', captionPos: 'center', watermark: true } },
+  leader: { intro: { style: 'filmleader', duration: 11 }, style: { theme: 'ivory', typography: 'warm' } },
+  vertical: { intro: { style: 'golden', duration: 10 }, style: { theme: 'noir', typography: 'classic', captionPos: 'center' }, w: 1080, h: 1920 },
+  square: { intro: { style: 'mosaic', duration: 10 }, style: { theme: 'navy', typography: 'modern' }, w: 1080, h: 1080 },
 };
-const proj = { ...base, ...scenarios[scenario], style: { ...scenarios[scenario].style } };
+const sc = scenarios[scenario];
+const proj = { ...base, ...sc, text: { ...base.text, ...(sc.textx || {}) }, style: { ...sc.style } };
 
 const server = await createServer({ configFile: path.join(root, '..', 'vite.config.js'), server: { port: 5199 }, logLevel: 'error' });
 await server.listen();
@@ -43,7 +51,7 @@ page.on('console', (m) => console.log('[page]', m.text()));
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto('http://localhost:5199/harness.html');
 await page.waitForFunction(() => window.ready);
-const info = await page.evaluate((p) => window.setup(p), proj);
+const info = await page.evaluate(([p, w, h]) => window.setup(p, w, h), [proj, sc.w || 1920, sc.h || 1080]);
 console.log('total', info.total.toFixed(2), JSON.stringify(info.segs.map((s) => [s.type, +s.start.toFixed(2), s.trans])));
 const ts = times.length ? times : [0.6, 2, 3.5, 5, 7, 9.2, 10.5, 13, 14.6, 18, info.total - 6, info.total - 3, info.total - 1];
 for (const t of ts) {

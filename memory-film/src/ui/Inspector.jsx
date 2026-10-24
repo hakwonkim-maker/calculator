@@ -4,6 +4,7 @@ import { Section, Field, TextInput, Slider, Segmented, Button, Icon } from './co
 import { Thumb } from './Filmstrip.jsx';
 import { TRANSITIONS } from '../engine/transitions.js';
 import { CHAPTER_DEFAULT_DURATION } from '../engine/timeline.js';
+import { MOTION_OPTIONS } from '../engine/presets.js';
 import { photoMeta, updateItem, useMetaVersion } from './store.js';
 import { LOW_RES_PX, checklist } from './logic.js';
 import { fmtTime } from '../engine/math.js';
@@ -86,12 +87,25 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
   }
 
   const meta = photoMeta.get(item.path) || {};
+  const rot = Number(item.rotate) || 0;
+  const rotate = (d) => update((p) => updateItem(p, item.id, { rotate: (((rot + d) % 360) + 360) % 360, focus: undefined }));
   const low = meta.w && Math.max(meta.w, meta.h) < LOW_RES_PX;
   const date = item.date ? new Date(item.date) : null;
   return (
     <div className="inspector">
-      <div className="insp-thumb">
-        <Thumb path={item.path} className="insp-img" />
+      <FocusPicker item={item} meta={meta} rot={rot} onPick={(f) => update((p) => updateItem(p, item.id, { focus: f }))} />
+      <div className="insp-tools">
+        <Button icon="undo" size="sm" variant="soft" onClick={() => rotate(-90)} title="왼쪽으로 90° 회전">
+          회전
+        </Button>
+        <Button icon="redo" size="sm" variant="soft" onClick={() => rotate(90)} title="오른쪽으로 90° 회전">
+          회전
+        </Button>
+        {item.focus && (
+          <button className="link" onClick={() => update((p) => updateItem(p, item.id, { focus: undefined }))}>
+            중심점 해제
+          </button>
+        )}
       </div>
       <div className="insp-meta">
         <b title={item.path}>{item.name || baseName(item.path)}</b>
@@ -137,6 +151,15 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
             기본값({project.style.photoDuration.toFixed(1)}초)으로 되돌리기
           </button>
         ) : null}
+        <Field label="카메라 움직임">
+          <div className="chip-row tight">
+            {MOTION_OPTIONS.map(([id, label]) => (
+              <button key={id} className={'chip' + ((item.motion || 'auto') === id ? ' on' : '')} onClick={() => update((p) => updateItem(p, item.id, { motion: id }))}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </Field>
         <Field label="다음 장면 전환">
           <TransitionSelect value={item.transition} onChange={set('transition')} />
         </Field>
@@ -150,6 +173,25 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
           삭제
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** 사진을 클릭해 화면 중심점(초점) 지정 — 꽉 채우기 화면에서 잘리지 않을 부분 */
+function FocusPicker({ item, meta, rot, onPick }) {
+  const swap = rot === 90 || rot === 270;
+  const ar = meta.w ? (swap ? meta.h / meta.w : meta.w / meta.h) : 1.5;
+  const onClick = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    onPick({ x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) });
+  };
+  return (
+    <div className="insp-thumb" title="사진에서 꼭 보여야 할 곳(얼굴 등)을 클릭하세요">
+      <div className="focus-box" style={{ aspectRatio: ar, width: `min(100%, ${Math.round(220 * ar)}px)` }} onClick={onClick}>
+        <Thumb path={item.path} rotate={rot} className="insp-img" />
+        {item.focus && <span className="focus-dot" style={{ left: `${item.focus.x * 100}%`, top: `${item.focus.y * 100}%` }} />}
+      </div>
+      <span className="focus-hint">{item.focus ? '중심점 지정됨' : '클릭해서 중심점 지정'}</span>
     </div>
   );
 }

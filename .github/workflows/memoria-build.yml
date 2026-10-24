@@ -8,6 +8,11 @@ on:
     paths:
       - 'memory-film/**'
       - '.github/workflows/memoria-build.yml'
+    tags:
+      - 'memoria-v*'
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -31,3 +36,9 @@ jobs:
           name: MEMORIA-Film-Studio-Windows
           path: memory-film/release/*.exe
           if-no-files-found: error
+      # 'memoria-v1.1.0' 같은 태그를 올리면 Releases 페이지에 설치 파일이 게시됩니다 (로그인 없이 다운로드 가능)
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/memoria-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: memory-film/release/*.exe

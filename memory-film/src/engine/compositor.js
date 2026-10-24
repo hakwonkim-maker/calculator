@@ -104,6 +104,10 @@ export class Compositor {
     return buf;
   }
 
+  isLost() {
+    return this.gl.isContextLost();
+  }
+
   dispose() {
     const gl = this.gl;
     for (const { p } of this.programs.values()) gl.deleteProgram(p);

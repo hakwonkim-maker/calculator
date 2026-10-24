@@ -46,6 +46,7 @@ function createWindow() {
 
   win.on('close', (e) => {
     if (exporter && exporter.running) {
+      e.preventDefault();
       const r = dialog.showMessageBoxSync(win, {
         type: 'warning',
         buttons: ['계속 만들기', '중단하고 종료'],
@@ -54,8 +55,7 @@ function createWindow() {
         message: '영상을 만드는 중입니다.',
         detail: '지금 종료하면 영상 파일이 완성되지 않습니다.',
       });
-      if (r === 0) e.preventDefault();
-      else exporter.cancel();
+      if (r === 1) exporter.cancel().finally(() => win.destroy());
     }
   });
 }
@@ -128,7 +128,8 @@ async function describeFiles(files) {
     }
   };
   await Promise.all(Array.from({ length: 8 }, worker));
-  photos.sort((a, b) => a.path.localeCompare(b.path, 'ko', { numeric: true }));
+  // 촬영일순 (같으면 파일명순)
+  photos.sort((a, b) => a.date - b.date || a.path.localeCompare(b.path, 'ko', { numeric: true }));
   return { photos, skipped };
 }
 

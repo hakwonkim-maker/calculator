@@ -4,6 +4,34 @@
 
 import { mediaUrl } from '../platform.js';
 
+/** 사진 아이템 → 캐시 키 (회전 값 포함) */
+export function itemKey(it) {
+  const r = ((Number(it?.rotate) || 0) % 360 + 360) % 360;
+  return r ? `${it.path}#r${r}` : it?.path;
+}
+
+function splitKey(key) {
+  const m = /^(.*)#r(90|180|270)$/.exec(key);
+  return m ? { path: m[1], rot: Number(m[2]) } : { path: key, rot: 0 };
+}
+
+/** EXIF 방향이 반영된 비트맵을 추가로 회전 */
+async function decodeRotated(key) {
+  const { path, rot } = splitKey(key);
+  const res = await fetch(mediaUrl(path));
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const full = await createImageBitmap(await res.blob(), { imageOrientation: 'from-image' });
+  if (!rot) return full;
+  const swap = rot === 90 || rot === 270;
+  const c = new OffscreenCanvas(swap ? full.height : full.width, swap ? full.width : full.height);
+  const g = c.getContext('2d');
+  g.translate(c.width / 2, c.height / 2);
+  g.rotate((rot * Math.PI) / 180);
+  g.drawImage(full, -full.width / 2, -full.height / 2);
+  full.close();
+  return createImageBitmap(c);
+}
+
 export class AssetManager {
   constructor({ width, height, capacity = 14 }) {
     this.W = width;
@@ -81,15 +109,8 @@ export class AssetManager {
     }
   }
 
-  async _fetchBlob(path) {
-    const res = await fetch(mediaUrl(path));
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return res.blob();
-  }
-
-  async _decode(path) {
-    const blob = await this._fetchBlob(path);
-    const full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  async _decode(key) {
+    const full = await decodeRotated(key);
     const iw = full.width;
     const ih = full.height;
     // 켄번스 줌(최대 ~1.3배)까지 고려한 최대 보관 크기
@@ -113,9 +134,8 @@ export class AssetManager {
     return { img, bg, w: tw, h: th, srcW: iw, srcH: ih };
   }
 
-  async _decodeThumb(path) {
-    const blob = await this._fetchBlob(path);
-    const full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  async _decodeThumb(key) {
+    const full = await decodeRotated(key);
     const s = Math.min(1, this.thumbSize / Math.max(full.width, full.height));
     const tw = Math.max(1, Math.round(full.width * s));
     const th = Math.max(1, Math.round(full.height * s));
@@ -140,15 +160,14 @@ const thumbQueue = [];
 let thumbActive = 0;
 const thumbUrlCache = new Map();
 
-export function uiThumb(path, size = 240) {
-  const key = path + '|' + size;
+export function uiThumb(path, size = 240, rotate = 0) {
+  const ak = itemKey({ path, rotate });
+  const key = ak + '|' + size;
   if (thumbUrlCache.has(key)) return thumbUrlCache.get(key);
   const p = new Promise((resolve) => {
     thumbQueue.push(async () => {
       try {
-        const res = await fetch(mediaUrl(path));
-        const blob = await res.blob();
-        const full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+        const full = await decodeRotated(ak);
         const s = Math.min(1, size / Math.min(full.width, full.height));
         const w = Math.round(full.width * s);
         const h = Math.round(full.height * s);

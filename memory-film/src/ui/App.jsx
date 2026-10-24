@@ -3,14 +3,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useProjectStore, setPath, photoMeta, setPhotoMeta } from './store.js';
 import { buildTimeline, activeAt } from '../engine/timeline.js';
 import { AudioPreview } from '../engine/audio.js';
-import { newId, normalizeProject, defaultProject } from '../engine/presets.js';
+import { newId, normalizeProject, defaultProject, applyTemplate, TEMPLATES } from '../engine/presets.js';
 import { importPaths, importWebFiles, mergeItems, defaultVideoName } from './logic.js';
 import { api, isDesktop, baseName } from '../platform.js';
 import { Preview } from './Preview.jsx';
 import { Filmstrip } from './Filmstrip.jsx';
 import { Inspector } from './Inspector.jsx';
 import { ExportModal } from './ExportModal.jsx';
-import { PhotosPanel, TextPanel, StylePanel, MusicPanel, ExportPanel } from './panels.jsx';
+import { PhotosPanel, TextPanel, StylePanel, MusicPanel, ExportPanel, TemplateGallery } from './panels.jsx';
 import { Icon, Button } from './controls.jsx';
 
 const STEPS = [
@@ -32,6 +32,8 @@ export default function App() {
   const [exportPath, setExportPath] = useState(null);
   const [quality, setQuality] = useState('standard');
   const [dragOver, setDragOver] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(() => !store.restored && !store.project.items.length && !store.project.template);
+  const [previewReq, setPreviewReq] = useState(null);
   const previewRef = useRef(null);
   const audio = useMemo(() => new AudioPreview(), []);
   const fileInput = useRef(null);
@@ -99,7 +101,6 @@ export default function App() {
         if (!folder) return;
         busyToast();
         addItems(await importPaths([folder], recursive));
-        if (project.name === defaultProject().name) update((p) => p, null);
       },
       importFiles: async () => {
         if (!isDesktop) return fileInput.current?.click();
@@ -111,7 +112,7 @@ export default function App() {
         const id = newId('c');
         update((p) => {
           const items = p.items.slice();
-          const anchor = refId || [...selected].find((s) => items.some((i) => i.id === s));
+          const anchor = (typeof refId === 'string' && refId) || [...selected].find((s) => items.some((i) => i.id === s));
           let idx = anchor ? items.findIndex((i) => i.id === anchor) + (before ? 0 : 1) : items.length;
           if (idx < 0) idx = items.length;
           items.splice(idx, 0, { id, type: 'chapter', title: '', subtitle: '' });
@@ -121,11 +122,30 @@ export default function App() {
         toast('챕터 카드를 넣었습니다. 오른쪽에서 제목을 입력하세요.');
       },
       deleteSelected: () => {
-        const n = [...selected].filter((s) => s !== 'intro' && s !== 'outro').length;
-        if (!n) return;
+        const removed = project.items.map((it, idx) => ({ it, idx })).filter(({ it }) => selected.has(it.id));
+        if (!removed.length) return;
         update((p) => ({ ...p, items: p.items.filter((i) => !selected.has(i.id)) }));
         setSelected(new Set());
-        toast(`${n}개 항목을 삭제했습니다`, 'info', { label: '되돌리기', run: undo });
+        // 되돌리기: 그 사이 다른 편집을 했어도 삭제한 항목만 원래 위치에 복원
+        toast(`${removed.length}개 항목을 삭제했습니다`, 'info', {
+          label: '되돌리기',
+          run: () =>
+            update((p) => {
+              const items = p.items.slice();
+              const have = new Set(items.map((i) => i.id));
+              for (const { it, idx } of removed) if (!have.has(it.id)) items.splice(Math.min(idx, items.length), 0, it);
+              return { ...p, items };
+            }),
+        });
+      },
+      openTemplates: () => setShowTemplates(true),
+      previewOutro: () => {
+        const s = tlRef.current.segments.find((x) => x.type === 'outro');
+        if (s) previewRef.current?.playRange(s.start, s.start + s.dur);
+      },
+      resetTransitions: () => {
+        update((p) => ({ ...p, intro: { ...p.intro, transition: 'auto' }, items: p.items.map((i) => (i.transition && i.transition !== 'auto' ? { ...i, transition: 'auto' } : i)) }));
+        toast('모든 전환을 자동으로 되돌렸습니다');
       },
       addMusic: async () => {
         if (!isDesktop) return audioInput.current?.click();
@@ -143,12 +163,10 @@ export default function App() {
       },
       goStep: setStep,
       startExport: async () => {
-        let out = project.output.path;
-        if (!out) {
-          out = await api.saveVideoDialog(defaultVideoName(project));
-          if (!out) return;
-          update((p) => setPath(p, 'output.path', out));
-        }
+        // 매번 저장 위치를 확인 (이전 영상을 실수로 덮어쓰지 않도록)
+        const out = await api.saveVideoDialog(project.output.path ? baseName(project.output.path) : defaultVideoName(project));
+        if (!out) return;
+        update((p) => setPath(p, 'output.path', out));
         previewRef.current?.pause();
         setExportPath(out);
       },
@@ -278,6 +296,33 @@ export default function App() {
   const onSetTransition = (id, t) => {
     if (id === '__intro') update((p) => setPath(p, 'intro.transition', t));
     else update((p) => ({ ...p, items: p.items.map((i) => (i.id === id ? { ...i, transition: t } : i)) }));
+    setPreviewReq({ key: id === '__intro' ? 'intro' : id, n: Math.random() });
+  };
+
+  const onSetAllTransitions = (t) => {
+    update((p) => ({ ...p, intro: { ...p.intro, transition: t }, items: p.items.map((i) => ({ ...i, transition: t })) }));
+    toast('모든 장면 전환에 적용했습니다');
+  };
+
+  // 전환을 고르면 그 구간을 바로 재생해서 보여줌
+  useEffect(() => {
+    if (!previewReq) return;
+    const segs = tl.segments;
+    const i = segs.findIndex((s) => s.key === previewReq.key);
+    const nx = segs[i + 1];
+    setPreviewReq(null);
+    if (nx) previewRef.current?.playRange(nx.start - 0.9, nx.start + nx.tIn + 0.7);
+  }, [tl, previewReq]);
+
+  const onApplyTemplate = (id) => {
+    update((p) => applyTemplate(p, id));
+    setShowTemplates(false);
+    toast(`‘${TEMPLATES[id].name}’ 템플릿을 적용했습니다. 문구는 ‘문구’ 단계에서 바꿀 수 있습니다.`);
+    setStep('text');
+    setTimeout(() => {
+      previewRef.current?.seek(0);
+      previewRef.current?.play();
+    }, 300);
   };
 
   const onTick = useCallback((t) => {
@@ -290,7 +335,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e) => {
       const tag = e.target.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || exportPath) return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || exportPath || showTemplates) return;
       const mod = e.ctrlKey || e.metaKey;
       if (e.code === 'Space') {
         e.preventDefault();
@@ -376,6 +421,9 @@ export default function App() {
           <Button icon="undo" onClick={undo} disabled={!store.past.length} title="실행 취소 (Ctrl+Z)" />
           <Button icon="redo" onClick={redo} disabled={!store.future.length} title="다시 실행 (Ctrl+Shift+Z)" />
           <span className="sep" />
+          <Button icon="sparkle" onClick={() => setShowTemplates(true)} title="영상 종류(템플릿) 고르기">
+            템플릿
+          </Button>
           <Button icon="open" onClick={open} title="프로젝트 열기">
             열기
           </Button>
@@ -436,7 +484,7 @@ export default function App() {
               <p>
                 사진을 촬영일 순서로 불러와 자연스러운 전환과 움직임,
                 <br />
-                인트로·엔딩이 있는 기념 영상을 만들어 드립니다.
+                인트로·엔딩이 있는 영상을 만들어 PC에 MP4 파일로 저장합니다.
               </p>
               <div className="btn-row center">
                 <Button icon="folder" variant="primary" size="lg" onClick={() => actions.importFolder(true)}>
@@ -446,6 +494,9 @@ export default function App() {
                   사진 파일 선택
                 </Button>
               </div>
+              <button className="link" onClick={() => setShowTemplates(true)}>
+                ✦ 영상 종류(웨딩·생일·여행·행사 등) 먼저 고르기
+              </button>
               <small>또는 사진·폴더를 이 창에 끌어다 놓으세요 · JPG, PNG, WEBP 지원</small>
             </div>
           </div>
@@ -480,6 +531,7 @@ export default function App() {
           onSelectSpecial={onSelectSpecial}
           onReorder={onReorder}
           onSetTransition={onSetTransition}
+          onSetAllTransitions={onSetAllTransitions}
           onDropFiles={onDropFiles}
           onAddPhotos={actions.importFiles}
         />
@@ -513,6 +565,7 @@ export default function App() {
         ))}
       </div>
 
+      {showTemplates && <TemplateGallery project={project} onApply={onApplyTemplate} onClose={() => setShowTemplates(false)} />}
       {exportPath && <ExportModal project={project} outPath={exportPath} onClose={() => setExportPath(null)} />}
 
       <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => { addItems(importWebFiles(e.target.files)); e.target.value = ''; }} />

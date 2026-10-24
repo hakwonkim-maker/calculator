@@ -17,6 +17,13 @@ export const TRANSITIONS = {
   crosswarp: { name: '크로스 워프', desc: '공간이 휘어지며 전환' },
   ripple: { name: '물결', desc: '물결 파동 전환' },
   swirl: { name: '소용돌이', desc: '회오리치며 전환' },
+  slideUp: { name: '위로 밀기', desc: '아래에서 위로 밀어 올림' },
+  cube: { name: '큐브', desc: '정육면체가 돌아가듯 전환' },
+  heart: { name: '하트', desc: '하트 모양으로 열림 · 웨딩/생일' },
+  dots: { name: '도트', desc: '물방울 무늬로 채워짐' },
+  blinds: { name: '블라인드', desc: '세로 블라인드가 넘어감' },
+  filmBurn: { name: '필름 번', desc: '필름이 타들어가며 전환' },
+  glitch: { name: '글리치', desc: '디지털 노이즈 효과' },
   none: { name: '컷', desc: '즉시 전환' },
 };
 
@@ -135,7 +142,8 @@ vec4 transition(vec2 uv) {
   float p = smoothstep(0.0, 1.0, progress);
   float e = p * (1.0 + 2.0 * f) - f;
   float m = 1.0 - smoothstep(e - f, e + f, proj);
-  float edge = exp(-pow((proj - e) / f * 1.6, 2.0)) * sin(3.14159265 * progress);
+  float te = (proj - e) / f * 1.6;
+  float edge = exp(-te * te) * sin(3.14159265 * progress);
   vec4 a = blurFrom(uv, edge * 0.25);
   vec4 b = blurTo(uv, edge * 0.25);
   vec3 c = mix(a.rgb, b.rgb, m) + edge * 0.12 * vec3(1.0, 0.94, 0.82);
@@ -153,7 +161,8 @@ vec4 transition(vec2 uv) {
   float m = 1.0 - smoothstep(r - f, r + f, d);
   vec4 a = getFromColor((uv - 0.5) / (1.0 + 0.06 * p) + 0.5);
   vec4 b = getToColor((uv - 0.5) / (1.1 - 0.1 * p) + 0.5);
-  float ring = exp(-pow((d - r) / f * 1.8, 2.0)) * sin(3.14159265 * progress) * 0.1;
+  float tr = (d - r) / f * 1.8;
+  float ring = exp(-tr * tr) * sin(3.14159265 * progress) * 0.1;
   return vec4(mix(a.rgb, b.rgb, m) + ring * vec3(1.0, 0.93, 0.8), 1.0);
 }`,
 
@@ -172,7 +181,7 @@ vec4 transition(vec2 uv) {
   float p = progress;
   float m = smoothstep(0.42, 0.58, p);
   float sa = smoothstep(0.0, 0.5, p);
-  float sb = smoothstep(1.0, 0.5, p);
+  float sb = 1.0 - smoothstep(0.5, 1.0, p);
   vec4 a = radialSample(uFrom, uv, 1.0 + sa * sa * 0.7, sa * 0.32, uFromLook);
   vec4 b = radialSample(uTo, uv, 1.0 + sb * sb * 0.45, sb * 0.32, uToLook);
   vec4 c = mix(a, b, m);
@@ -190,10 +199,10 @@ vec4 transition(vec2 uv) {
     vec2 q = vec2(uv.x + o, uv.y);
     vec4 c;
     if (q.x < edge) {
-      c = getFromColor(vec2(q.x + p * 0.45, q.y));
+      c = fromL0(vec2(q.x + p * 0.45, q.y));
       c.rgb *= 1.0 - 0.35 * p;
     } else {
-      c = getToColor(vec2(q.x - edge, q.y));
+      c = toL0(vec2(q.x - edge, q.y));
       float sh = smoothstep(0.0, 0.05, q.x - edge);
       c.rgb *= mix(0.7, 1.0, sh);
     }
@@ -235,6 +244,136 @@ vec4 transition(vec2 uv) {
   vec2 p2 = q / vec2(ratio, 1.0) + 0.5;
   return mix(getFromColor(p2), getToColor(p2), smoothstep(0.35, 0.65, T));
 }`,
+
+  slideUp: `
+vec4 transition(vec2 uv) {
+  float p = progress < 0.5 ? 4.0 * progress * progress * progress : 1.0 - pow(-2.0 * progress + 2.0, 3.0) / 2.0;
+  float v = 1.5 * sin(3.14159265 * progress);
+  float edge = p;
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < 12; i++) {
+    float o = (float(i) / 11.0 - 0.5) * v * 0.045;
+    vec2 q = vec2(uv.x, uv.y + o);
+    vec4 c;
+    if (q.y > edge) {
+      c = fromL0(vec2(q.x, q.y - p * 0.45));
+      c.rgb *= 1.0 - 0.35 * p;
+    } else {
+      c = toL0(vec2(q.x, q.y + 1.0 - edge));
+      c.rgb *= mix(0.7, 1.0, smoothstep(0.0, 0.05, edge - q.y));
+    }
+    acc += c;
+  }
+  return acc / 12.0;
+}`,
+
+  cube: `
+vec4 face(sampler2D s, vec2 q, float look, float shade) {
+  if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) return vec4(0.0, 0.0, 0.0, 1.0);
+  vec4 c = lookColor(textureLod(s, q, 0.0), look);
+  return vec4(c.rgb * shade, 1.0);
+}
+vec4 transition(vec2 uv) {
+  float p = smoothstep(0.0, 1.0, progress);
+  float z = 1.0 - 0.18 * sin(3.14159265 * progress);
+  vec2 u = (uv - 0.5) / z + 0.5;
+  float edge = 1.0 - p;
+  if (u.x < edge) {
+    float lx = u.x / max(edge, 1e-4);
+    float sc = 1.0 - 0.22 * p * (1.0 - lx);
+    return face(uFrom, vec2(lx, (u.y - 0.5) / sc + 0.5), uFromLook, 1.0 - 0.55 * p);
+  }
+  float lx = (u.x - edge) / max(1.0 - edge, 1e-4);
+  float sc = 1.0 - 0.22 * (1.0 - p) * lx;
+  return face(uTo, vec2(lx, (u.y - 0.5) / sc + 0.5), uToLook, 0.45 + 0.55 * p);
+}`,
+
+  heart: `
+float heartF(vec2 p, float size) {
+  vec2 o = p / (1.6 * max(size, 1e-4));
+  float a = o.x * o.x + o.y * o.y - 0.3;
+  return o.x * o.x * o.y * o.y * o.y - a * a * a;
+}
+vec4 transition(vec2 uv) {
+  float size = progress * progress * 1.35;
+  vec2 p = (uv - vec2(0.5, 0.42)) * vec2(ratio, 1.0) * 0.9;
+  float f = heartF(p, size);
+  float m = smoothstep(-0.004, 0.004, f);
+  if (progress > 0.98) m = 1.0;
+  float glow = (1.0 - smoothstep(0.0, 0.03, abs(f))) * sin(3.14159265 * progress) * 0.25;
+  vec3 c = mix(getFromColor(uv).rgb, getToColor(uv).rgb, m) + glow * vec3(1.0, 0.75, 0.8);
+  return vec4(c, 1.0);
+}`,
+
+  dots: `
+vec4 transition(vec2 uv) {
+  vec2 g = uv * vec2(ratio, 1.0) * 14.0;
+  float d = distance(fract(g), vec2(0.5));
+  float dist = distance(uv, vec2(0.5)) * 1.3;
+  float r = progress * 1.6 - dist * 0.9;
+  float m = 1.0 - smoothstep(r - 0.06, r + 0.06, d);
+  m = max(m, smoothstep(0.85, 1.0, progress));
+  return mix(getFromColor(uv), getToColor(uv), m);
+}`,
+
+  blinds: `
+vec4 transition(vec2 uv) {
+  float n = 9.0;
+  float f = fract(uv.x * n);
+  float pp = clamp(progress * 1.35 - uv.x * 0.35, 0.0, 1.0);
+  pp = smoothstep(0.0, 1.0, pp);
+  float m = 1.0 - smoothstep(pp - 0.03, pp + 0.03, f);
+  float shade = 1.0 - 0.35 * (1.0 - abs(f - pp) * 4.0) * step(abs(f - pp), 0.25) * sin(3.14159265 * progress);
+  vec4 c = mix(getFromColor(uv), getToColor(uv), m);
+  return vec4(c.rgb * shade, 1.0);
+}`,
+
+  filmBurn: `
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash12(i), b = hash12(i + vec2(1.0, 0.0)), c = hash12(i + vec2(0.0, 1.0)), d = hash12(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { v += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return v;
+}
+vec4 transition(vec2 uv) {
+  vec2 q = uv * vec2(ratio, 1.0) * 2.2;
+  float n = fbm(q + 3.7) * 0.8 + (1.0 - uv.y) * 0.2;
+  float th = progress * 1.35 - 0.2;
+  float m = 1.0 - smoothstep(th - 0.02, th + 0.02, n);
+  float e = 1.0 - smoothstep(0.0, 0.07, abs(n - th));
+  float charA = (1.0 - smoothstep(th, th + 0.12, n)) * (1.0 - m);
+  vec3 a = getFromColor(uv).rgb * (1.0 - 0.75 * charA);
+  vec3 b = getToColor(uv).rgb;
+  vec3 c = mix(a, b, m);
+  c += e * vec3(1.0, 0.45, 0.08) * 1.6 * step(0.001, progress) * step(progress, 0.999);
+  c += pow(e, 3.0) * vec3(1.0, 0.9, 0.6);
+  return vec4(c, 1.0);
+}`,
+
+  glitch: `
+vec4 transition(vec2 uv) {
+  float k = sin(3.14159265 * progress);
+  float t = floor(progress * 24.0);
+  float row = floor(uv.y * 28.0);
+  float r = hash12(vec2(row, t));
+  float shift = (r - 0.5) * 0.18 * k * step(0.55, r);
+  float r2 = hash12(vec2(floor(uv.y * 7.0), t + 13.0));
+  shift += (r2 - 0.5) * 0.06 * k;
+  vec2 q = vec2(uv.x + shift, uv.y);
+  float sel = step(0.5, progress + (hash12(vec2(row, t + 5.0)) - 0.5) * 0.5 * k);
+  float ca = 0.012 * k;
+  vec3 c;
+  if (sel < 0.5) c = vec3(fromL0(q + vec2(ca, 0.0)).r, fromL0(q).g, fromL0(q - vec2(ca, 0.0)).b);
+  else c = vec3(toL0(q + vec2(ca, 0.0)).r, toL0(q).g, toL0(q - vec2(ca, 0.0)).b);
+  float scan = 0.92 + 0.08 * sin(uv.y * uRes.y * 1.5);
+  c *= mix(1.0, scan, k);
+  return vec4(c, 1.0);
+}`,
 };
 
 const HEADER = /* glsl */ `#version 300 es
@@ -275,6 +414,9 @@ vec4 lookColor(vec4 c, float amt) {
 }
 vec4 getColor(sampler2D s, vec2 uv, float look) { return lookColor(texture(s, uv), look); }
 vec4 getFromColor(vec2 uv) { return getColor(uFrom, uv, uFromLook); }
+// 분기/루프 안에서 쓰는 샘플링: 암시적 LOD 미정의 동작을 피하려고 명시적 LOD 0 사용
+vec4 fromL0(vec2 uv) { return lookColor(textureLod(uFrom, uv, 0.0), uFromLook); }
+vec4 toL0(vec2 uv) { return lookColor(textureLod(uTo, uv, 0.0), uToLook); }
 vec4 getToColor(vec2 uv) { return getColor(uTo, uv, uToLook); }
 `;
 
@@ -284,7 +426,7 @@ void main() {
   vec3 col = c.rgb;
   vec2 asp = vec2(ratio, 1.0);
   float d = length((vUv - 0.5) * asp) / length(vec2(0.5) * asp);
-  col *= mix(1.0, smoothstep(1.15, 0.35, d), uVignette);
+  col *= mix(1.0, 1.0 - smoothstep(0.35, 1.15, d), uVignette);
   vec2 px = vUv * uRes;
   float g = hash12(px + fract(uTime * 7.13) * 1000.0) - 0.5;
   float lum = dot(col, vec3(0.299, 0.587, 0.114));

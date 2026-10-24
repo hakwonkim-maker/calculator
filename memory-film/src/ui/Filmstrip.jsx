@@ -6,21 +6,23 @@ import { photoMeta, setPhotoMeta, useMetaVersion } from './store.js';
 import { LOW_RES_PX } from './logic.js';
 import { Icon } from './controls.jsx';
 
-export function Thumb({ path, className }) {
+export function Thumb({ path, className, rotate = 0 }) {
   const [src, setSrc] = useState(null);
   useEffect(() => {
     let alive = true;
-    uiThumb(path).then((r) => {
+    uiThumb(path, 240, rotate).then((r) => {
       if (!alive) return;
       if (r.url) {
         setSrc(r.url);
-        setPhotoMeta(path, { w: r.w, h: r.h, error: false });
+        // 메타 정보는 원본 기준 (회전 전)
+        const swap = rotate === 90 || rotate === 270;
+        setPhotoMeta(path, { w: swap ? r.h : r.w, h: swap ? r.w : r.h, error: false });
       } else setPhotoMeta(path, { error: true });
     });
     return () => {
       alive = false;
     };
-  }, [path]);
+  }, [path, rotate]);
   return src ? <img className={className} src={src} alt="" draggable={false} /> : <div className={className + ' thumb-loading'} />;
 }
 
@@ -34,11 +36,17 @@ const Card = memo(function Card({ item, index, selected, active, onSelect, onDra
       className={'card' + (selected ? ' selected' : '') + (active ? ' active' : '') + (item.type === 'chapter' ? ' chapter' : '')}
       draggable
       onDragStart={(e) => onDragStart(e, item.id)}
-      onMouseDown={(e) => onSelect(item.id, e)}
+      onMouseDown={(e) => {
+        // 이미 선택된 카드를 누르면 다중 선택을 유지한 채 드래그할 수 있도록 클릭 때 단일 선택
+        if (!selected || e.shiftKey || e.ctrlKey || e.metaKey) onSelect(item.id, e);
+      }}
+      onClick={(e) => {
+        if (selected && !e.shiftKey && !e.ctrlKey && !e.metaKey) onSelect(item.id, e);
+      }}
       title={item.name || item.title}
     >
       {item.type === 'photo' ? (
-        <Thumb path={item.path} className="card-img" />
+        <Thumb path={item.path} rotate={Number(item.rotate) || 0} className="card-img" />
       ) : (
         <div className="card-chapter">
           <b>{item.title || '챕터'}</b>
@@ -48,19 +56,20 @@ const Card = memo(function Card({ item, index, selected, active, onSelect, onDra
       <span className="card-idx">{index}</span>
       {low && <span className="badge warn" title={`원본 ${meta.w}×${meta.h}px`}>저해상도</span>}
       {bad && <span className="badge err">{meta.missing ? '파일 없음' : '열 수 없음'}</span>}
+      {item.motion && item.motion !== 'auto' && <span className="card-flag" title="개별 카메라 움직임">◎</span>}
       {(item.label || item.caption) && <span className="card-cap">{[item.label, item.caption].filter(Boolean).join(' · ')}</span>}
     </div>
   );
 });
 
-function TransitionChip({ seg, item, onPick, open, setOpen }) {
+function TransitionChip({ seg, item, onPick, onPickAll, open, setOpen }) {
   const resolved = seg?.transIn;
   const btnRef = useRef(null);
   const [pos, setPos] = useState(null);
   useEffect(() => {
     if (!open || !btnRef.current) return;
     const r = btnRef.current.getBoundingClientRect();
-    setPos({ left: Math.max(8, Math.min(window.innerWidth - 240, r.left + r.width / 2 - 115)), top: r.top - 6 });
+    setPos({ left: Math.max(8, Math.min(window.innerWidth - 448, r.left + r.width / 2 - 220)), top: r.top - 6 });
   }, [open]);
   const isAuto = !item?.transition || item.transition === 'auto';
   return (
@@ -71,24 +80,33 @@ function TransitionChip({ seg, item, onPick, open, setOpen }) {
       </button>
       {open && (
         <div className="tmenu" style={pos || { visibility: 'hidden' }} onMouseDown={(e) => e.stopPropagation()}>
-          <div className="tmenu-head">다음 장면으로 넘어가는 효과</div>
-          <button className={isAuto ? 'on' : ''} onClick={() => onPick('auto')}>
-            <b>자동</b>
-            <small>스타일에 맞게 자동 선택</small>
-          </button>
-          {Object.entries(TRANSITIONS).map(([id, t]) => (
-            <button key={id} className={!isAuto && item?.transition === id ? 'on' : ''} onClick={() => onPick(id)}>
-              <b>{t.name}</b>
-              <small>{t.desc}</small>
+          <div className="tmenu-head">
+            <span>누르면 바로 적용되고 미리보기로 재생됩니다</span>
+          </div>
+          <div className="tmenu-grid">
+            <button className={isAuto ? 'on' : ''} onClick={() => onPick('auto')}>
+              <b>자동</b>
+              <small>스타일에 맞게</small>
             </button>
-          ))}
+            {Object.entries(TRANSITIONS).map(([id, t]) => (
+              <button key={id} className={!isAuto && item?.transition === id ? 'on' : ''} onClick={() => onPick(id)} title={t.desc}>
+                <b>{t.name}</b>
+                <small>{t.desc}</small>
+              </button>
+            ))}
+          </div>
+          {!isAuto && (
+            <button className="tmenu-all" onClick={() => onPickAll(item.transition)}>
+              ‘{TRANSITIONS[item.transition]?.name}’ 를 모든 장면 전환에 적용
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorder, onSetTransition, onSelectSpecial, onDropFiles, onAddPhotos }) {
+export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorder, onSetTransition, onSetAllTransitions, onSelectSpecial, onDropFiles, onAddPhotos }) {
   const metaV = useMetaVersion();
   const [dragId, setDragId] = useState(null);
   const [dropIdx, setDropIdx] = useState(null);
@@ -165,6 +183,10 @@ export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorde
                 onSetTransition('__intro', t);
                 setMenu(null);
               }}
+              onPickAll={(t) => {
+                onSetAllTransitions(t);
+                setMenu(null);
+              }}
             />
           )}
         </>
@@ -187,6 +209,10 @@ export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorde
                 setOpen={setMenu}
                 onPick={(t) => {
                   onSetTransition(it.id, t);
+                  setMenu(null);
+                }}
+                onPickAll={(t) => {
+                  onSetAllTransitions(t);
                   setMenu(null);
                 }}
               />

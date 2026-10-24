@@ -5,7 +5,7 @@
 import { TRANSITION_STYLES, MOTION_LEVELS } from './presets.js';
 import { hashStr, rng, weightedPick } from './math.js';
 
-const INTRO_EXIT = { golden: 'lightLeak', mosaic: 'zoomBlur', light: 'dipWhite' };
+const INTRO_EXIT = { golden: 'lightLeak', mosaic: 'zoomBlur', light: 'dipWhite', cinematic: 'dipBlack', polaroid: 'blurDissolve', bloom: 'dipWhite', minimal: 'fade', filmleader: 'filmBurn' };
 const MOTIONS = [
   ['zoomIn', 3],
   ['zoomOut', 2.4],
@@ -83,8 +83,12 @@ export function buildTimeline(project) {
     if (s.type === 'photo') {
       const r = rng(hashStr(`${seed}|m|${s.key}`));
       let m = weightedPick(r, MOTIONS, prevMotion);
+      const fx = r() * 2 - 1;
+      const fy = r() * 2 - 1;
+      const own = s.item.motion;
+      if (own && own !== 'auto') m = own === 'none' ? 'zoomIn' : own;
       prevMotion = m;
-      s.motion = { type: m, amount: motionAmt, fx: r() * 2 - 1, fy: r() * 2 - 1 };
+      s.motion = { type: m, amount: own === 'none' ? 0 : motionAmt, fx, fy };
     }
   });
   // 챕터 카드 배경으로 쓸 다음 사진

@@ -226,9 +226,9 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 /* ------------------------------------------------ 미리보기 */
 .preview { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 18px 22px 6px; gap: 12px; }
 .preview-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; container-type: size; }
-.preview-frame { position: relative; width: min(100cqw, calc(100cqh * 16 / 9)); aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: #000; box-shadow: 0 30px 80px -20px #000, 0 0 0 1px #ffffff10; }
+.preview-frame { position: relative; width: min(100cqw, calc(100cqh * var(--ar, 1.7778))); aspect-ratio: var(--ar, 1.7778); border-radius: 6px; overflow: hidden; background: #000; box-shadow: 0 30px 80px -20px #000, 0 0 0 1px #ffffff10; }
 .preview-frame:fullscreen { border-radius: 0; width: 100vw; height: 100vh; aspect-ratio: auto; display: grid; place-items: center; background: #000; }
-.preview-frame:fullscreen .preview-canvas { width: min(100vw, calc(100vh * 16 / 9)); height: auto; }
+.preview-frame:fullscreen .preview-canvas { width: min(100vw, calc(100vh * var(--ar, 1.7778))); height: auto; }
 .preview-canvas { width: 100%; height: 100%; display: block; cursor: pointer; }
 .preview-loading, .preview-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; pointer-events: none; }
 .transport { display: flex; align-items: center; gap: 10px; height: 40px; }
@@ -311,7 +311,7 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
 .tchip:hover, .tchip.open { color: var(--gold); }
 .tchip.manual .tchip-dia { background: var(--gold); border-color: var(--gold); }
 .tchip.manual { color: var(--gold); }
-.tmenu { position: fixed; transform: translateY(-100%); z-index: 50; width: 230px; max-height: 380px; overflow-y: auto; background: #1d1b17; border: 1px solid var(--line2); border-radius: 11px; padding: 6px; box-shadow: 0 24px 60px -10px #000; }
+.tmenu { position: fixed; transform: translateY(-100%); z-index: 50; width: 440px; max-height: 470px; overflow-y: auto; background: #1d1b17; border: 1px solid var(--line2); border-radius: 11px; padding: 6px; box-shadow: 0 24px 60px -10px #000; }
 .tmenu-head { font-size: 11px; color: var(--dim); padding: 6px 8px 8px; }
 .tmenu button { width: 100%; display: flex; flex-direction: column; gap: 1px; text-align: left; padding: 7px 9px; border-radius: 7px; border: none; background: transparent; }
 .tmenu button:hover { background: #ffffff0c; }
@@ -339,7 +339,7 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
 .modal-title { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
 .modal-title.center { justify-content: center; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
-.export-thumb { width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: #000; box-shadow: 0 0 0 1px var(--line); }
+.export-thumb { max-width: 100%; max-height: 300px; margin: 0 auto; display: block; border-radius: 8px; background: #000; box-shadow: 0 0 0 1px var(--line); }
 .progress { height: 8px; border-radius: 6px; background: #2a2723; overflow: hidden; }
 .progress i { display: block; height: 100%; background: linear-gradient(90deg, #b8903d, var(--gold2)); transition: width 0.25s; }
 .export-stats { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -355,3 +355,44 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
   .app { grid-template-columns: 68px 310px minmax(380px, 1fr) 270px; }
   .step-label { font-size: 11px; }
 }
+
+/* ------------------------------------------------ v1.1: 미리보기 카드 · 템플릿 · 화면비 · 초점 */
+.pcard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pcard-grid.three { grid-template-columns: repeat(3, 1fr); }
+.pcard { display: flex; flex-direction: column; gap: 3px; padding: 6px 6px 9px; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); text-align: left; transition: border-color 0.15s, transform 0.15s; }
+.pcard:hover { border-color: var(--line2); transform: translateY(-1px); }
+.pcard.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.pcard-img { position: relative; display: block; aspect-ratio: 16 / 9; border-radius: 7px; overflow: hidden; background: #000; margin-bottom: 4px; }
+.pcard-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pcard-check { position: absolute; right: 6px; top: 6px; width: 22px; height: 22px; border-radius: 50%; background: var(--gold); color: var(--gold-ink); display: grid; place-items: center; box-shadow: 0 2px 8px #0008; }
+.pcard-badge { position: absolute; left: 6px; top: 6px; font-size: 10px; padding: 2px 6px; border-radius: 5px; background: #000a; }
+.pcard b { font-size: 12.5px; padding: 0 2px; }
+.pcard small { font-size: 11px; color: var(--dim); line-height: 1.4; padding: 0 2px; }
+.tpl-modal { width: min(1080px, 94vw); max-height: 90vh; overflow: hidden; }
+.tpl-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.tpl-head .hint { margin-top: 6px; }
+.tpl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; overflow-y: auto; padding: 2px; }
+.tpl-grid .pcard b { font-size: 14px; }
+.aspect-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.aspect { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); text-align: left; }
+.aspect.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.aspect.on b { color: var(--gold); }
+.aspect b { font-size: 12px; }
+.aspect small { font-size: 11px; color: var(--dim); }
+.aspect-box { width: 30px; height: 30px; display: grid; place-items: center; margin-bottom: 4px; }
+.aspect-box i { display: block; border: 1.5px solid currentColor; border-radius: 3px; opacity: 0.8; }
+.aspect.on .aspect-box i { border-color: var(--gold); background: #d9b86722; }
+.insp-thumb { background: #000; aspect-ratio: auto !important; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.focus-box { position: relative; max-width: 100%; max-height: 220px; height: auto; width: 100%; cursor: crosshair; }
+.focus-box .insp-img { width: 100%; height: 100%; object-fit: fill; border-radius: 4px; }
+.focus-dot { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 2px var(--gold), 0 0 12px #000; pointer-events: none; }
+.focus-dot::after { content: ''; position: absolute; left: 7px; top: 7px; width: 4px; height: 4px; border-radius: 50%; background: var(--gold); }
+.focus-hint { font-size: 11px; color: var(--dim); }
+.insp-tools { display: flex; gap: 6px; align-items: center; padding-top: 8px; }
+.chip-row.tight { gap: 4px; }
+.chip-row.tight .chip { padding: 5px 9px; font-size: 11.5px; }
+.chip:disabled { opacity: 0.4; cursor: default; }
+.card-flag { position: absolute; right: 6px; bottom: 6px; font-size: 11px; color: var(--gold); text-shadow: 0 0 4px #000; }
+.tmenu-head { display: flex; justify-content: space-between; }
+.tmenu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.tmenu-all { margin-top: 6px; border-top: 1px solid var(--line) !important; border-radius: 0 0 7px 7px !important; color: var(--gold); font-weight: 600; text-align: center !important; padding: 10px !important; }

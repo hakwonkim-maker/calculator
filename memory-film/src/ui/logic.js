@@ -1,6 +1,6 @@
 // UI 비즈니스 로직: 사진 가져오기, 정렬, 자동 챕터, 점검 체크리스트
 import { api, isDesktop, baseName } from '../platform.js';
-import { newId, RESOLUTIONS, QUALITY } from '../engine/presets.js';
+import { newId, RESOLUTIONS, outputSize } from '../engine/presets.js';
 import { photoMeta } from './store.js';
 import { fmtTime } from '../engine/math.js';
 
@@ -54,6 +54,29 @@ export function sortPhotos(project, by, reverse = false) {
   let bucket = [];
   const flush = () => {
     out.push(...bucket.sort(cmp));
+    bucket = [];
+  };
+  for (const it of project.items) {
+    if (it.type === 'photo') bucket.push(it);
+    else {
+      flush();
+      out.push(it);
+    }
+  }
+  flush();
+  return { ...project, items: out };
+}
+
+/** 사진 순서 무작위 (챕터 구간 유지) */
+export function shufflePhotos(project) {
+  const out = [];
+  let bucket = [];
+  const flush = () => {
+    for (let i = bucket.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [bucket[i], bucket[j]] = [bucket[j], bucket[i]];
+    }
+    out.push(...bucket);
     bucket = [];
   };
   for (const it of project.items) {
@@ -135,12 +158,12 @@ export function checklist(project, tl) {
 
 export function estimateSizeMB(project, total) {
   const r = RESOLUTIONS[project.output.resolution] || RESOLUTIONS['1080p'];
-  const q = QUALITY[project.output.quality] || QUALITY.high;
+  const { w, h } = outputSize(project);
+  const area = (w * h) / ((r.s * 16) / 9 * r.s);
   const qMul = { standard: 0.6, high: 1, best: 1.6 }[project.output.quality] || 1;
   const fpsMul = project.output.fps >= 50 ? 1.4 : 1;
   const grainMul = 1 + (Number(project.style.grain) || 0) * 0.8;
-  void q;
-  const mbps = r.bitrate * qMul * fpsMul * grainMul * 0.55 + (project.music.tracks.length ? 0.256 : 0);
+  const mbps = r.bitrate * area * qMul * fpsMul * grainMul * 0.55 + (project.music.tracks.length ? 0.256 : 0);
   return (mbps * total) / 8;
 }
 

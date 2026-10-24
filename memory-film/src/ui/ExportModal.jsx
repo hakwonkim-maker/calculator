@@ -1,7 +1,7 @@
 // 영상 내보내기 진행 창
 import React, { useEffect, useRef, useState } from 'react';
 import { Renderer } from '../engine/renderer.js';
-import { RESOLUTIONS, QUALITY } from '../engine/presets.js';
+import { QUALITY, outputSize } from '../engine/presets.js';
 import { fmtTime } from '../engine/math.js';
 import { api, baseName } from '../platform.js';
 import { Button, Icon } from './controls.jsx';
@@ -17,7 +17,7 @@ export function ExportModal({ project, outPath, onClose }) {
     startedRef.current = true;
     let renderer = null;
     (async () => {
-      const res = RESOLUTIONS[project.output.resolution] || RESOLUTIONS['1080p'];
+      const res = outputSize(project);
       const q = QUALITY[project.output.quality] || QUALITY.high;
       const fps = Number(project.output.fps) || 30;
       const t0 = performance.now();
@@ -40,13 +40,16 @@ export function ExportModal({ project, outPath, onClose }) {
           audio: project.music,
         });
         const tctx = thumbRef.current?.getContext('2d');
+        // 프레임 버퍼 2개를 번갈아 사용 (4K에서 매 프레임 33MB 할당 방지)
+        const bufs = [new Uint8Array(res.w * res.h * 4), new Uint8Array(res.w * res.h * 4)];
         let pending = null;
         let lastUi = 0;
         for (let i = 0; i < N; i++) {
           if (cancelRef.current) throw new Error('__cancel');
           await renderer.renderAt(i / fps, 2);
-          const buf = renderer.readPixels(new Uint8Array(res.w * res.h * 4));
+          if (renderer.compositor.isLost()) throw new Error('그래픽 장치가 초기화되어 영상을 계속 만들 수 없습니다. 다른 프로그램을 닫고 다시 시도해 주세요.');
           if (pending) await pending;
+          const buf = renderer.readPixels(bufs[i % 2]);
           pending = api.exportFrame(buf);
           const now = performance.now();
           if (now - lastUi > 250 || i === N - 1) {
@@ -83,7 +86,7 @@ export function ExportModal({ project, outPath, onClose }) {
               <span className="spinner" />
               {st.phase === 'prepare' ? '준비하는 중…' : st.phase === 'finalize' ? '마무리하는 중…' : '영상을 만드는 중입니다'}
             </div>
-            <canvas ref={thumbRef} width={480} height={270} className="export-thumb" />
+            <canvas ref={thumbRef} width={Math.round(270 * (outputSize(project).w / outputSize(project).h))} height={270} className="export-thumb" style={{ aspectRatio: `${outputSize(project).w} / ${outputSize(project).h}` }} />
             <div className="progress">
               <i style={{ width: `${pct}%` }} />
             </div>

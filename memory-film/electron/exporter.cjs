@@ -3,6 +3,7 @@
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 function ffmpegPath() {
   let p = process.env.MF_FFMPEG || require('ffmpeg-static');
@@ -70,7 +71,10 @@ class Exporter {
       '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${width}x${height}`, '-framerate', String(fps), '-i', 'pipe:0'];
     if (a) args.push(...a.inputs);
     const v = '[0:v]vflip,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p[vout]';
-    args.push('-filter_complex', a ? `${v};${a.filter}` : v, '-map', '[vout]');
+    // 필터가 길어져도 Windows 명령줄 길이 제한(32K)에 걸리지 않도록 파일로 전달
+    this.scriptPath = path.join(os.tmpdir(), `memoria-filter-${process.pid}-${Date.now()}.txt`);
+    fs.writeFileSync(this.scriptPath, a ? `${v};${a.filter}` : v, 'utf8');
+    args.push('-filter_complex_script', this.scriptPath, '-map', '[vout]');
     if (a) args.push('-map', '[aout]', '-c:a', 'aac', '-b:a', '256k', '-ar', '48000');
     args.push(
       '-c:v', 'libx264', '-preset', preset, '-crf', String(crf), '-tune', 'film',
@@ -116,9 +120,14 @@ class Exporter {
     });
   }
 
+  cleanup() {
+    if (this.scriptPath) fs.promises.rm(this.scriptPath, { force: true }).catch(() => {});
+  }
+
   async finish() {
     this.proc.stdin.end();
     const code = await this.exitPromise;
+    this.cleanup();
     if (code !== 0) throw new Error(`영상 인코딩 실패 (코드 ${code})\n${this.log}`);
     const st = await fs.promises.stat(this.opts.path);
     return { path: this.opts.path, size: st.size };
@@ -133,6 +142,7 @@ class Exporter {
       this.proc.kill('SIGKILL');
       await this.exitPromise;
     }
+    this.cleanup();
     await fs.promises.rm(this.opts.path, { force: true }).catch(() => {});
   }
 }
