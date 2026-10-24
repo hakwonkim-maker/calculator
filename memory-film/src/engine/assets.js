@@ -122,8 +122,26 @@ export class AssetManager {
     }
   }
 
+  /** 가져올 때 읽어 둔 원본 크기(EXIF 방향 반영) — 디코딩 단계에서 바로 축소하는 데 사용 */
+  setHints(items) {
+    this.hints = new Map();
+    for (const it of items) {
+      if (it.type === 'photo' && it.w && it.h) this.hints.set(itemKey(it), { w: it.w, h: it.h, rot: ((Number(it.rotate) || 0) % 360 + 360) % 360 });
+    }
+  }
+
   async _decode(key) {
-    const full = await decodeRotated(key);
+    const hint = this.hints?.get(key);
+    let pre = 0;
+    if (hint) {
+      const swap = hint.rot === 90 || hint.rot === 270;
+      const fw = swap ? hint.h : hint.w;
+      const fh = swap ? hint.w : hint.h;
+      const sc = Math.max(this.W / fw, this.H / fh) * 1.35;
+      // 원본이 충분히 클 때만 축소 디코딩 (가로 폭만 지정 → 실제 비율은 디코더가 유지)
+      if (sc < 0.9) pre = Math.max(64, Math.round(hint.w * sc));
+    }
+    const full = await decodeRotated(key, pre);
     const iw = full.width;
     const ih = full.height;
     // 켄번스 줌(최대 ~1.3배)까지 고려한 최대 보관 크기

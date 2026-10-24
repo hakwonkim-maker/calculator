@@ -76,13 +76,72 @@ export function drawCharsReveal(ctx, text, cx, y, o) {
     const a = easeOutCubic(prog(t, start + idx * stagger, start + idx * stagger + dur));
     idx++;
     if (a <= 0.001) continue;
+    // (성능) 글자별 블러 대신 투명도 + 떠오름 + 살짝 커지는 효과
     ctx.globalAlpha = baseAlpha * alpha * a;
-    if (blur > 0 && a < 1) ctx.filter = `blur(${(blur * (1 - a)).toFixed(2)}px)`;
-    ctx.fillText(ch, xi, y + rise * (1 - a));
-    if (blur > 0) ctx.filter = 'none';
+    if (blur > 0 && a < 1) {
+      const s = 1 + 0.06 * (1 - a);
+      ctx.save();
+      ctx.translate(xi, y + rise * (1 - a));
+      ctx.scale(s, s);
+      ctx.fillText(ch, 0, 0);
+      ctx.restore();
+    } else ctx.fillText(ch, xi, y + rise * (1 - a));
   }
   ctx.globalAlpha = baseAlpha;
   ctx.letterSpacing = '0px';
+}
+
+// ---------- 성능: 블러는 작은 캔버스에서만 ----------
+// 메인 캔버스에 ctx.filter = blur()를 쓰면 화면 전체 크기의 레이어가 생겨 프레임당 수백 ms가 걸린다.
+// 대상 영역만 작은 캔버스에 그려 블러한 뒤 붙인다.
+const scratchPool = [];
+function scratch(i, w, h) {
+  let c = scratchPool[i];
+  if (!c || c.width < w || c.height < h) {
+    c = new OffscreenCanvas(Math.max(w, c?.width || 0), Math.max(h, c?.height || 0));
+    scratchPool[i] = c;
+  }
+  return c;
+}
+
+/** (x, y, w, h) 영역에 draw(g)로 그린 내용을 px만큼 흐리게 해서 ctx에 그림 (좌표는 ctx 기준) */
+export function withBlur(ctx, px, x, y, w, h, draw) {
+  if (!(px > 0.4)) {
+    draw(ctx);
+    return;
+  }
+  const pad = Math.ceil(px * 3);
+  const cw = Math.ceil(w + pad * 2);
+  const ch = Math.ceil(h + pad * 2);
+  if (cw <= 0 || ch <= 0) return;
+  const A = scratch(0, cw, ch);
+  const B = scratch(1, cw, ch);
+  const a = A.getContext('2d');
+  a.setTransform(1, 0, 0, 1, 0, 0);
+  a.clearRect(0, 0, cw, ch);
+  a.translate(pad - x, pad - y);
+  draw(a);
+  const b = B.getContext('2d');
+  b.setTransform(1, 0, 0, 1, 0, 0);
+  b.clearRect(0, 0, cw, ch);
+  b.filter = `blur(${px.toFixed(2)}px)`;
+  b.drawImage(A, 0, 0, cw, ch, 0, 0, cw, ch);
+  b.filter = 'none';
+  ctx.drawImage(B, 0, 0, cw, ch, x - pad, y - pad, cw, ch);
+}
+
+/** 큰 영역 블러: 1/scale로 줄여 블러 후 확대 (블러가 크면 화질 차이 없음) */
+export function drawDownBlurred(ctx, src, W, H, px, scale = 4) {
+  const w = Math.ceil(W / scale);
+  const h = Math.ceil(H / scale);
+  const c = scratch(2, w, h);
+  const g = c.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, w, h);
+  g.filter = `blur(${(px / scale).toFixed(2)}px)`;
+  g.drawImage(src, 0, 0, W, H, 0, 0, w, h);
+  g.filter = 'none';
+  ctx.drawImage(c, 0, 0, w, h, 0, 0, W, H);
 }
 
 /** 공백 제외 글자 수 (순차 등장 총 시간 계산용) */
@@ -100,6 +159,16 @@ function bokehSprite(color, kind) {
   const g = c.getContext('2d');
   const [r, gg, b] = hexToRgb(color);
   const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  if (kind === 'discBlur') {
+    // 큰 보케용: 블러를 스프라이트에 미리 구워 둠 (매 프레임 블러 필터 제거)
+    const base = bokehSprite(color, 'disc');
+    g.filter = 'blur(5px)';
+    g.drawImage(base, 8, 8, S - 16, S - 16);
+    g.filter = 'none';
+    const bm = c.transferToImageBitmap(); // ImageBitmap은 그릴 때 복사 비용이 없음
+    spriteCache.set(key, bm);
+    return bm;
+  }
   if (kind === 'disc') {
     grad.addColorStop(0, `rgba(${r},${gg},${b},0.42)`);
     grad.addColorStop(0.72, `rgba(${r},${gg},${b},0.36)`);
@@ -114,8 +183,9 @@ function bokehSprite(color, kind) {
   }
   g.fillStyle = grad;
   g.fillRect(0, 0, S, S);
-  spriteCache.set(key, c);
-  return c;
+  const bm = c.transferToImageBitmap();
+  spriteCache.set(key, bm);
+  return bm;
 }
 
 /**
@@ -127,6 +197,7 @@ export function drawBokeh(ctx, W, H, t, opts) {
   const u = Math.min(W, H) / 1080;
   const r = rng(hashStr('bokeh' + seed));
   const disc = bokehSprite(color, 'disc');
+  const discBlur = bokehSprite(color, 'discBlur');
   const spark = bokehSprite(color, 'spark');
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
@@ -144,9 +215,7 @@ export function drawBokeh(ctx, W, H, t, opts) {
     const a = base * (0.65 + 0.35 * Math.sin(t * tw + ph)) * alpha;
     if (a <= 0.003) continue;
     ctx.globalAlpha = a;
-    if (blurDiscs && rad > 110 * u) ctx.filter = `blur(${(6 * u).toFixed(1)}px)`;
-    ctx.drawImage(disc, x - rad, y - rad, rad * 2, rad * 2);
-    ctx.filter = 'none';
+    ctx.drawImage(blurDiscs && rad > 110 * u ? discBlur : disc, x - rad, y - rad, rad * 2, rad * 2);
   }
   for (let i = 0; i < sparks; i++) {
     const x0 = r() * W;

@@ -18,7 +18,7 @@ export const Preview = forwardRef(function Preview(props, ref) {
   return <PreviewInner key={props.quality + aspect} {...props} aspect={aspect} ref={ref} />;
 });
 
-const PreviewInner = forwardRef(function PreviewInner({ project, tl, quality, aspect, audio, onTick, onPlayingChange, onError }, ref) {
+const PreviewInner = forwardRef(function PreviewInner({ project, tl, quality, aspect, audio, onTick, onPlayingChange, onError, sceneLabel }, ref) {
   const canvasRef = useRef(null);
   const rendererRef = useRef(null);
   const timeRef = useRef(0);
@@ -232,6 +232,7 @@ const PreviewInner = forwardRef(function PreviewInner({ project, tl, quality, as
         <div className="tc">
           <b>{fmtTime(time)}</b>
           <span> / {fmtTime(total)}</span>
+          {sceneLabel && <small className="scene-label">{sceneLabel}</small>}
         </div>
         <div className="scrub" ref={barRef} onPointerDown={onBarDown} onPointerMove={onBarMove} onPointerUp={onBarUp}>
           <div className="scrub-track">

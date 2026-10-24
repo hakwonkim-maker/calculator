@@ -65,11 +65,12 @@ export function Field({ label, children, hint, inline }) {
   );
 }
 
-export function TextInput({ value, onChange, placeholder, maxLength, multiline, rows = 3 }) {
+export function TextInput({ value, onChange, placeholder, maxLength, multiline, rows = 3, onFocus }) {
   const props = {
     value: value ?? '',
     placeholder,
     maxLength,
+    onFocus,
     spellCheck: false,
     onChange: (e) => onChange(e.target.value),
     onKeyDown: (e) => e.stopPropagation(),

@@ -4,14 +4,47 @@ import { useProjectStore, setPath, photoMeta, setPhotoMeta } from './store.js';
 import { buildTimeline, activeAt } from '../engine/timeline.js';
 import { AudioPreview } from '../engine/audio.js';
 import { newId, normalizeProject, defaultProject, applyTemplate, TEMPLATES } from '../engine/presets.js';
-import { importPaths, importWebFiles, mergeItems, defaultVideoName } from './logic.js';
+import { importPaths, importWebFiles, mergeItems, defaultVideoName, estimateSizeMB, musicLength } from './logic.js';
 import { api, isDesktop, baseName } from '../platform.js';
 import { Preview } from './Preview.jsx';
 import { Filmstrip } from './Filmstrip.jsx';
 import { Inspector } from './Inspector.jsx';
 import { ExportModal } from './ExportModal.jsx';
 import { PhotosPanel, TextPanel, StylePanel, MusicPanel, ExportPanel, TemplateGallery } from './panels.jsx';
-import { Icon, Button } from './controls.jsx';
+import { Icon, Button, Segmented } from './controls.jsx';
+
+const STEP_NEXT = {
+  photos: ['text', '다음: 인트로·문구 입력'],
+  text: ['style', '다음: 색감·글꼴·전환 고르기'],
+  style: ['music', '다음: 배경음악 넣기'],
+  music: ['export', '다음: 영상 파일 만들기'],
+};
+
+/** 단계 하단 안내: 처음 쓰는 사람도 순서대로 따라가면 완성 */
+function StepFooter({ step, setStep, hasPhotos }) {
+  const nx = STEP_NEXT[step];
+  if (!nx) return null;
+  return (
+    <div className="step-footer">
+      <button className="next-btn" onClick={() => setStep(nx[0])} disabled={step === 'photos' && !hasPhotos} title={step === 'photos' && !hasPhotos ? '먼저 사진을 불러오세요' : ''}>
+        {nx[1]} <span>→</span>
+      </button>
+    </div>
+  );
+}
+
+/** 미리보기 아래에 표시할 현재 장면 이름 */
+function sceneLabel(tl, key, project) {
+  if (!key) return '';
+  if (key === 'intro') return '인트로';
+  if (key === 'outro') return '엔딩';
+  const photos = project.items.filter((i) => i.type === 'photo');
+  const it = project.items.find((i) => i.id === key);
+  if (!it) return '';
+  if (it.type === 'chapter') return `챕터 · ${it.title || ''}`;
+  const n = photos.indexOf(it) + 1;
+  return `사진 ${n} / ${photos.length}${it.label || it.caption ? ' · ' + [it.label, it.caption].filter(Boolean).join(' ') : ''}`;
+}
 
 const STEPS = [
   ['photos', '사진', 'photo'],
@@ -29,11 +62,12 @@ export default function App() {
   const [selected, setSelected] = useState(() => new Set());
   const [activeKey, setActiveKey] = useState(null);
   const [toasts, setToasts] = useState([]);
-  const [exportPath, setExportPath] = useState(null);
+  const [exportJob, setExportJob] = useState(null); // { path, draft }
   const [quality, setQuality] = useState('standard');
   const [dragOver, setDragOver] = useState(false);
   const [showTemplates, setShowTemplates] = useState(() => !store.restored && !store.project.items.length && !store.project.template);
   const [previewReq, setPreviewReq] = useState(null);
+  const [compact, setCompact] = useState(false);
   const previewRef = useRef(null);
   const audio = useMemo(() => new AudioPreview(), []);
   const fileInput = useRef(null);
@@ -41,6 +75,8 @@ export default function App() {
   const lastSel = useRef(null);
   const tlRef = useRef(tl);
   tlRef.current = tl;
+  const projectRef = useRef(project);
+  projectRef.current = project;
 
   const toast = useCallback((text, level = 'ok', action) => {
     const id = Math.random();
@@ -139,6 +175,14 @@ export default function App() {
         });
       },
       openTemplates: () => setShowTemplates(true),
+      /** 입력 중인 문구가 보이는 장면으로 미리보기 이동 (재생 중이 아닐 때) */
+      peek: (kind) => {
+        const s = tlRef.current.segments.find((x) => x.type === kind);
+        if (!s) return;
+        const f = kind === 'intro' ? 0.62 : kind === 'credits' ? 0.3 : 0.6;
+        previewRef.current?.pause(); // 입력하는 동안 글자가 보이는 화면에 멈춰 있도록
+        previewRef.current?.seek(s.start + Math.min(s.dur - s.tOut - 0.1, s.dur * f));
+      },
       previewOutro: () => {
         const s = tlRef.current.segments.find((x) => x.type === 'outro');
         if (s) previewRef.current?.playRange(s.start, s.start + s.dur);
@@ -162,13 +206,22 @@ export default function App() {
         previewRef.current?.play();
       },
       goStep: setStep,
-      startExport: async () => {
+      startExport: async (draft = false) => {
         // 매번 저장 위치를 확인 (이전 영상을 실수로 덮어쓰지 않도록)
-        const out = await api.saveVideoDialog(project.output.path ? baseName(project.output.path) : defaultVideoName(project));
+        const base = project.output.path ? baseName(project.output.path) : defaultVideoName(project);
+        const name = draft ? base.replace(/(_시안)?\.mp4$/i, '_시안.mp4') : base.replace(/_시안\.mp4$/i, '.mp4');
+        const out = await api.saveVideoDialog(name);
         if (!out) return;
-        update((p) => setPath(p, 'output.path', out));
+        // 디스크 여유 공간 확인 (예상 용량의 1.5배 + 200MB)
+        const need = (draft ? estimateSizeMB({ ...project, output: { ...project.output, resolution: '720p', quality: 'standard' } }, tlRef.current.total) : estimateSizeMB(project, tlRef.current.total)) * 1.5 + 200;
+        const free = await api.freeSpace?.(out);
+        if (free > 0 && free / 1048576 < need) {
+          toast(`저장 위치의 남은 공간(${Math.round(free / 1048576)}MB)이 부족합니다. 약 ${Math.round(need)}MB가 필요합니다. 다른 드라이브를 선택해 주세요.`, 'error');
+          return;
+        }
+        if (!draft) update((p) => setPath(p, 'output.path', out));
         previewRef.current?.pause();
-        setExportPath(out);
+        setExportJob({ path: out, draft });
       },
     }),
     [addItems, project, selected, toast, undo, update],
@@ -178,7 +231,17 @@ export default function App() {
     try {
       const duration = await audio.load(path);
       update((p) => setPath(p, 'music.tracks', [...p.music.tracks, { path, name, duration }]));
-      toast(`‘${name}’ 추가 (${Math.floor(duration / 60)}분 ${Math.round(duration % 60)}초)`);
+      const hasPhotos = projectRef.current.items.some((i) => i.type === 'photo');
+      if (hasPhotos && projectRef.current.style.lengthMode !== 'total')
+        toast(`‘${name}’ 추가 (${Math.floor(duration / 60)}분 ${Math.round(duration % 60)}초)`, 'ok', {
+          label: '영상 길이를 음악에 맞추기',
+          run: () =>
+            update((p) => {
+              const ml = musicLength(p.music);
+              return ml > 0 ? { ...p, style: { ...p.style, lengthMode: 'total', targetDuration: Math.round(ml * 10) / 10 } } : p;
+            }),
+        });
+      else toast(`‘${name}’ 추가 (${Math.floor(duration / 60)}분 ${Math.round(duration % 60)}초)`);
     } catch {
       toast(`‘${name}’ 파일을 읽을 수 없습니다`, 'error');
     }
@@ -318,7 +381,7 @@ export default function App() {
     update((p) => applyTemplate(p, id));
     setShowTemplates(false);
     toast(`‘${TEMPLATES[id].name}’ 템플릿을 적용했습니다. 문구는 ‘문구’ 단계에서 바꿀 수 있습니다.`);
-    setStep('text');
+    setStep(project.items.length ? 'text' : 'photos');
     setTimeout(() => {
       previewRef.current?.seek(0);
       previewRef.current?.play();
@@ -335,7 +398,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e) => {
       const tag = e.target.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || exportPath || showTemplates) return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || exportJob || showTemplates) return;
       const mod = e.ctrlKey || e.metaKey;
       if (e.code === 'Space') {
         e.preventDefault();
@@ -455,6 +518,7 @@ export default function App() {
           {step === 'music' && <MusicPanel {...panelProps} />}
           {step === 'export' && <ExportPanel {...panelProps} />}
         </div>
+        <StepFooter step={step} setStep={setStep} hasPhotos={project.items.length > 0} />
       </aside>
 
       <main className="center">
@@ -465,6 +529,7 @@ export default function App() {
           quality={quality}
           audio={audio}
           onTick={onTick}
+          sceneLabel={sceneLabel(tl, activeKey, project)}
           onError={(m) => toast(m, 'error')}
         />
         <div className="preview-opts">
@@ -514,6 +579,7 @@ export default function App() {
           </span>
           <span className="strip-hint">드래그로 순서 변경 · ◆ 를 눌러 전환 효과 선택 · Shift/Ctrl 다중 선택</span>
           <div className="strip-actions">
+            <Segmented value={compact ? 'small' : 'large'} onChange={(v) => setCompact(v === 'small')} size="sm" options={[['large', '크게'], ['small', '작게']]} />
             <Button icon="chapter" size="sm" onClick={() => actions.addChapter()}>
               챕터 추가
             </Button>
@@ -523,6 +589,7 @@ export default function App() {
           </div>
         </div>
         <Filmstrip
+          compact={compact}
           project={project}
           tl={tl}
           selected={selected}
@@ -566,7 +633,7 @@ export default function App() {
       </div>
 
       {showTemplates && <TemplateGallery project={project} onApply={onApplyTemplate} onClose={() => setShowTemplates(false)} />}
-      {exportPath && <ExportModal project={project} outPath={exportPath} onClose={() => setExportPath(null)} />}
+      {exportJob && <ExportModal project={project} outPath={exportJob.path} draft={exportJob.draft} onClose={() => setExportJob(null)} />}
 
       <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => { addItems(importWebFiles(e.target.files)); e.target.value = ''; }} />
       <input

@@ -1,10 +1,10 @@
 // MEMORIA Film Studio — Electron 메인 프로세스
 // 역할: 창 관리, 파일/폴더 선택, 사진 스캔(EXIF 촬영일), 로컬 미디어 제공(media://), FFmpeg 인코딩
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, powerSaveBlocker, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, powerSaveBlocker, Menu, Notification } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
-const { Exporter } = require('./exporter.cjs');
+const { Exporter, detectEncoders, ENCODER_LABEL } = require('./exporter.cjs');
 
 const isDev = process.argv.includes('--dev');
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.avif', '.jfif']);
@@ -70,6 +70,8 @@ app.whenReady().then(() => {
   });
   if (!isDev) Menu.setApplicationMenu(null);
   createWindow();
+  // 하드웨어 인코더는 미리 조용히 확인 (내보내기 시작이 늦어지지 않도록)
+  setTimeout(() => detectEncoders().catch(() => {}), 4000);
 });
 
 app.on('window-all-closed', () => app.quit());
@@ -236,12 +238,47 @@ ipcMain.handle('shell:openPath', (_e, p) => shell.openPath(p));
 ipcMain.handle('app:info', () => ({ version: app.getVersion(), videos: app.getPath('videos'), platform: process.platform }));
 
 // ---------------- 내보내기 (FFmpeg) ----------------
+ipcMain.handle('export:encoders', async () => {
+  const hw = await detectEncoders().catch(() => []);
+  return { hw, labels: ENCODER_LABEL };
+});
+
 ipcMain.handle('export:start', async (_e, opts) => {
   if (exporter && exporter.running) throw new Error('이미 내보내기가 진행 중입니다.');
-  exporter = new Exporter(opts);
+  let encoder = 'libx264';
+  if (opts.encoder !== 'cpu') {
+    const hw = await detectEncoders().catch(() => []);
+    if (hw.length) encoder = hw[0];
+    // 테스트용: 하드웨어 인코더 실패 → CPU 자동 전환 경로 검증
+    if (process.env.MF_FORCE_ENCODER) encoder = process.env.MF_FORCE_ENCODER;
+  }
+  exporter = new Exporter({ ...opts, encoder });
   await exporter.start();
   psbId = powerSaveBlocker.start('prevent-app-suspension');
-  return true;
+  return { encoder, label: ENCODER_LABEL[encoder] || encoder };
+});
+
+ipcMain.handle('export:progress', (_e, ratio) => {
+  if (win && !win.isDestroyed()) win.setProgressBar(ratio < 0 ? -1 : Math.min(1, ratio));
+});
+
+ipcMain.handle('export:notifyDone', (_e, title, body) => {
+  if (!win || win.isDestroyed()) return;
+  win.setProgressBar(-1);
+  if (!win.isFocused()) {
+    win.flashFrame(true);
+    if (Notification.isSupported()) new Notification({ title, body, silent: false }).show();
+  }
+});
+
+// 저장 위치의 남은 디스크 공간 (바이트)
+ipcMain.handle('fs:free', async (_e, p) => {
+  try {
+    const st = await fs.promises.statfs(path.dirname(p));
+    return st.bavail * st.bsize;
+  } catch {
+    return -1;
+  }
 });
 
 ipcMain.handle('export:frame', async (_e, data) => {
@@ -269,6 +306,7 @@ ipcMain.handle('export:cancel', async () => {
     if (exporter) await exporter.cancel();
   } finally {
     stopPsb();
+    if (win && !win.isDestroyed()) win.setProgressBar(-1);
   }
   return true;
 });

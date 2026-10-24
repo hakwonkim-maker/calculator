@@ -10,6 +10,33 @@ import { THEMES, TYPOGRAPHY, LOOKS } from './presets.js';
 import { TRANSITIONS } from './transitions.js';
 import { ensureFonts } from './fonts.js';
 
+/** 작은 LRU 캐시 (텍스트·그림자 등 미리 그린 이미지 재사용) */
+class LRU {
+  constructor(max) {
+    this.max = max;
+    this.m = new Map();
+  }
+  get size() {
+    return this.m.size;
+  }
+  get(k) {
+    const v = this.m.get(k);
+    if (v !== undefined) {
+      this.m.delete(k);
+      this.m.set(k, v);
+    }
+    return v;
+  }
+  set(k, v) {
+    this.m.delete(k);
+    this.m.set(k, v);
+    while (this.m.size > this.max) this.m.delete(this.m.keys().next().value);
+  }
+  clear() {
+    this.m.clear();
+  }
+}
+
 export class Renderer {
   constructor({ canvas, width, height, assetCapacity }) {
     this.W = width;
@@ -35,6 +62,7 @@ export class Renderer {
 
   setProject(project) {
     this.project = project;
+    this.assets.setHints(project.items);
     this.tl = buildTimeline(project);
     const theme = THEMES[project.style.theme] || THEMES.noir;
     const ca = captionAccent(theme);
@@ -52,6 +80,7 @@ export class Renderer {
       layerCtx: this.layerCtx,
       numLayer: this.numLayer,
       numLayerCtx: this.numLayerCtx,
+      cache: this.cache || (this.cache = new LRU(40)),
       darkAccent: ca.accent,
       darkAccentSolid: ca.solid,
     };
@@ -62,8 +91,10 @@ export class Renderer {
     return this.tl ? this.tl.total : 0;
   }
 
-  warmup() {
-    this.compositor.warmup(Object.keys(TRANSITIONS));
+  /** 셰이더 미리 컴파일. onlyUsed: 이 영상에 실제로 쓰이는 전환만 (내보내기 시작 시간 단축) */
+  warmup(onlyUsed = false) {
+    const ids = onlyUsed ? ['none', ...new Set(this.tl.segments.map((s) => s.transIn).filter(Boolean))] : Object.keys(TRANSITIONS);
+    return this.compositor.warmup(ids);
   }
 
   prepareFonts() {
@@ -134,11 +165,12 @@ export class Renderer {
       return;
     }
     const act = activeAt(tl, t);
+    const mips = !!act.to && this.compositor.needsMips(act.transition);
     drawSegment(this.ctxA, act.from, t - act.from.start, this.env);
-    this.compositor.upload('from', this.sceneA);
+    this.compositor.upload('from', this.sceneA, mips);
     if (act.to) {
       drawSegment(this.ctxB, act.to, t - act.to.start, this.env);
-      this.compositor.upload('to', this.sceneB);
+      this.compositor.upload('to', this.sceneB, mips);
     }
     this.compositor.draw({
       transition: act.to ? act.transition : 'none',

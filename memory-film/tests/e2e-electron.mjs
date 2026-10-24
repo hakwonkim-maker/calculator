@@ -74,10 +74,20 @@ await win.click('.panel .btn-primary:has-text("영상 파일 만들기")');
 await win.waitForSelector('.export-modal');
 await win.waitForTimeout(8000);
 await win.screenshot({ path: path.join(root, 'out', 'e2e_exporting.png') });
+console.log('encoder line:', (await win.textContent('.export-modal')).match(/인코딩: [^·]*/)?.[0] || '(n/a)');
 await win.waitForSelector('.done-badge, .error-box', { timeout: 1700000 });
 console.log('export seconds', ((Date.now() - t0) / 1000).toFixed(1));
 await win.screenshot({ path: path.join(root, 'out', 'e2e_done.png') });
 const err = await win.$('.error-box');
 if (err) console.log('EXPORT ERROR:', await err.textContent());
-console.log('page errors:', errors.length ? errors : 'none');
+if (!big && !err) {
+  await win.click('.modal-actions button:has-text("닫기")');
+  const t1 = Date.now();
+  await win.click('button:has-text("빠른 시안 먼저 만들기")');
+  await win.waitForSelector('.done-badge, .error-box', { timeout: 900000 });
+  console.log('draft seconds', ((Date.now() - t1) / 1000).toFixed(1), (await win.$('.error-box')) ? 'ERROR' : 'ok');
+  await win.click('.modal-actions button:has-text("닫기")');
+  console.log('export panel ETA:', (await win.textContent('.panel')).match(/예상 제작 시간[^)]*\)?/)?.[0]);
+}
+console.log('page errors:', errors.length ? JSON.stringify(errors).slice(0, 1500) : 'none');
 await app.close();

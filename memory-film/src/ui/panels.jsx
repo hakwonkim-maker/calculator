@@ -11,6 +11,7 @@ import { setPath } from './store.js';
 import { sortPhotos, shufflePhotos, autoChapters, autoYearLabels, musicLength, checklist, estimateSizeMB } from './logic.js';
 import { isDesktop, baseName } from '../platform.js';
 import { useThumb } from './thumbs.js';
+import { estimateExportSeconds } from './ExportModal.jsx';
 
 const fmtSec = (v) => `${Number(v).toFixed(1)}초`;
 
@@ -213,6 +214,8 @@ function LengthSection({ project, update, tl }) {
 export function TextPanel({ project, update, actions }) {
   const t = project.text;
   const set = (k) => (v) => update((p) => setPath(p, 'text.' + k, v), 'text.' + k);
+  const peekIntro = () => actions.peek('intro');
+  const peekOutro = () => actions.peek('outro');
   return (
     <>
       <Section
@@ -255,20 +258,20 @@ export function TextPanel({ project, update, actions }) {
       <Section title="타이틀 문구" hint="비워 둔 항목은 화면에 나오지 않습니다.">
         <div className="two">
           <Field label="큰 글자 (숫자·이니셜)">
-            <TextInput value={t.number} onChange={set('number')} placeholder="30" maxLength={8} />
+            <TextInput value={t.number} onChange={set('number')} onFocus={peekIntro} placeholder="30" maxLength={8} />
           </Field>
           <Field label="작은 영문">
-            <TextInput value={t.eyebrow} onChange={set('eyebrow')} placeholder="ANNIVERSARY" maxLength={28} />
+            <TextInput value={t.eyebrow} onChange={set('eyebrow')} onFocus={peekIntro} placeholder="ANNIVERSARY" maxLength={28} />
           </Field>
         </div>
         <Field label="메인 타이틀">
-          <TextInput value={t.title} onChange={set('title')} placeholder="함께 걸어온 30년" maxLength={34} />
+          <TextInput value={t.title} onChange={set('title')} onFocus={peekIntro} placeholder="함께 걸어온 30년" maxLength={34} />
         </Field>
         <Field label="날짜 / 부제">
-          <TextInput value={t.subtitle} onChange={set('subtitle')} placeholder="1996 — 2026" maxLength={40} />
+          <TextInput value={t.subtitle} onChange={set('subtitle')} onFocus={peekIntro} placeholder="1996 — 2026" maxLength={40} />
         </Field>
         <Field label="기관·회사·이름">
-          <TextInput value={t.org} onChange={set('org')} placeholder="예) 주식회사 ○○○" maxLength={40} />
+          <TextInput value={t.org} onChange={set('org')} onFocus={peekIntro} placeholder="예) 주식회사 ○○○" maxLength={40} />
         </Field>
         {project.intro.style === 'light' && (
           <div className="two">
@@ -314,20 +317,20 @@ export function TextPanel({ project, update, actions }) {
               ))}
             </div>
             <Field label="엔딩 타이틀">
-              <TextInput value={t.closingTitle} onChange={set('closingTitle')} placeholder="감사합니다" maxLength={24} />
+              <TextInput value={t.closingTitle} onChange={set('closingTitle')} onFocus={peekOutro} placeholder="감사합니다" maxLength={24} />
             </Field>
             {project.outro.style !== 'credits' && (
               <Field label="감사 메시지" hint="Enter로 줄을 나눌 수 있습니다 (2~3줄 권장)">
-                <TextInput multiline rows={3} value={t.closingMessage} onChange={set('closingMessage')} maxLength={160} />
+                <TextInput multiline rows={3} value={t.closingMessage} onChange={set('closingMessage')} onFocus={peekOutro} maxLength={160} />
               </Field>
             )}
             {project.outro.style === 'credits' && (
               <Field label="크레딧 (이름 목록)" hint="‘# 제목’은 섹션 제목, ‘역할 : 이름’은 2단으로 표시, 빈 줄은 간격">
-                <TextInput multiline rows={7} value={t.credits} onChange={set('credits')} placeholder={'# 함께한 사람들\n기획 : 홍길동\n촬영 : 김철수\n\n모든 임직원 여러분'} maxLength={3000} />
+                <TextInput multiline rows={7} value={t.credits} onChange={set('credits')} onFocus={() => actions.peek('credits')} placeholder={'# 함께한 사람들\n기획 : 홍길동\n촬영 : 김철수\n\n모든 임직원 여러분'} maxLength={3000} />
               </Field>
             )}
             <Field label="마무리 한 줄">
-              <TextInput value={t.closingSub} onChange={set('closingSub')} placeholder="앞으로도 함께하겠습니다" maxLength={40} />
+              <TextInput value={t.closingSub} onChange={set('closingSub')} onFocus={peekOutro} placeholder="앞으로도 함께하겠습니다" maxLength={40} />
             </Field>
             <Slider label="엔딩 길이" value={project.outro.duration} min={6} max={40} step={0.5} format={fmtSec} onChange={(v) => update((p) => setPath(p, 'outro.duration', v), 'outrodur')} />
             <Button icon="play" variant="soft" size="sm" onClick={actions.previewOutro}>
@@ -527,6 +530,10 @@ export function ExportPanel({ project, update, tl, actions, onSelectIds }) {
   const hasError = checks.some((c) => c.level === 'error');
   const size = estimateSizeMB(project, tl.total);
   const out = outputSize(project);
+  const frames = Math.ceil(tl.total * (Number(o.fps) || 30));
+  const eta = estimateExportSeconds(out.w, out.h, frames);
+  const draftSize = frameSize(o.aspect, 720);
+  const draftEta = estimateExportSeconds(draftSize.w, draftSize.h, Math.ceil(tl.total * 30));
   return (
     <>
       <Section title="점검">
@@ -572,7 +579,10 @@ export function ExportPanel({ project, update, tl, actions, onSelectIds }) {
           <Segmented value={o.fps} onChange={set('fps')} options={[[30, '30fps (권장)'], [60, '60fps (더 부드럽게)']]} />
         </Field>
         <Field label="압축 품질">
-          <Segmented value={o.quality} onChange={set('quality')} options={Object.entries(QUALITY).map(([k, q]) => [k, q.name])} />
+          <Segmented value={o.quality} onChange={set('quality')} options={Object.entries(QUALITY).filter(([k]) => k !== 'draft').map(([k, q]) => [k, q.name])} />
+        </Field>
+        <Field label="인코딩 방식" hint="자동: 그래픽카드(NVIDIA·Intel·AMD) 가속이 되면 사용해 훨씬 빠르게, 안 되면 CPU로 자동 전환">
+          <Segmented value={o.encoder === 'cpu' ? 'cpu' : 'auto'} onChange={set('encoder')} options={[['auto', '자동 (권장)'], ['cpu', 'CPU만 사용']]} />
         </Field>
         <p className="hint small">행사장 프로젝터·LED는 대부분 Full HD입니다. 4K는 4K 스크린일 때만 권장합니다 (제작 시간 약 4배).</p>
       </Section>
@@ -594,10 +604,17 @@ export function ExportPanel({ project, update, tl, actions, onSelectIds }) {
             <b>약 {size >= 1000 ? (size / 1024).toFixed(1) + 'GB' : Math.max(1, Math.round(size)) + 'MB'}</b>
           </div>
         </div>
+        <p className="hint small">
+          {eta ? `예상 제작 시간: 약 ${fmtTime(eta)} (이 PC에서 측정한 속도 기준)` : '예상 제작 시간은 첫 제작 때 이 PC의 속도를 측정해 다음부터 알려드립니다.'}
+        </p>
         {o.path && <p className="hint small">지난번 저장 위치: {o.path}</p>}
-        <Button icon="export" variant="primary" size="lg" disabled={hasError || !isDesktop} onClick={actions.startExport}>
+        <Button icon="export" variant="primary" size="lg" disabled={hasError || !isDesktop} onClick={() => actions.startExport(false)}>
           영상 파일 만들기 (MP4)
         </Button>
+        <Button icon="play" variant="soft" disabled={hasError || !isDesktop} onClick={() => actions.startExport(true)}>
+          빠른 시안 먼저 만들기 (720p{draftEta ? ` · 약 ${fmtTime(draftEta)}` : ''})
+        </Button>
+        <p className="hint small">시안: 화질을 낮춰 빠르게 만들어 전체 흐름·오타·음악을 실제 영상으로 확인할 때 사용하세요.</p>
         <p className="hint small">{isDesktop ? '버튼을 누르면 저장할 위치와 파일 이름을 고를 수 있습니다.' : '영상 파일 만들기는 PC 설치 버전에서 사용할 수 있습니다.'}</p>
       </Section>
     </>

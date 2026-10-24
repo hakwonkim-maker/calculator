@@ -5,7 +5,7 @@
 
 import {
   setFont, rgba, accentGradient, drawTracked, measureTracked, fitFontSize,
-  drawCharsReveal, visibleChars, drawBokeh, drawThemeBackground, drawCover, hexToRgb,
+  drawCharsReveal, visibleChars, drawBokeh, drawThemeBackground, drawCover, hexToRgb, withBlur, drawDownBlurred,
 } from './draw.js';
 import { prog, clamp, lerp, easeOutCubic, easeInOutSine, easeOutQuart, easeInOutCubic, inOut, rng, hashStr } from './math.js';
 import { itemKey } from './assets.js';
@@ -94,15 +94,32 @@ function drawLockupBody(ctx, env, tau, s, k, opts = {}) {
       const ry = Math.max(0, y - asc - pad);
       const rw = Math.min(W - rx, tw + pad * 2);
       const rh = Math.min(env.H - ry, asc + desc + pad * 2);
-      L.clearRect(0, 0, W, env.H);
-      L.save();
-      L.shadowColor = rgba(theme.particle, theme.dark ? 0.42 : 0.28);
-      L.shadowBlur = 46 * u;
-      L.fillStyle = accentGradient(L, theme, y - asc, y + desc);
-      drawTracked(L, tx.number, cx, y, size * 0.02);
-      L.restore();
+      // 금박 숫자 + 글로우는 한 번만 그려 캐시 (매 프레임 그림자 블러 계산 제거)
+      const ckey = `num|${tx.number}|${size.toFixed(1)}|${theme.accent.join()}|${typo.display.family}|${W}x${env.H}`;
+      let cached = env.cache.get(ckey);
+      if (!cached) {
+        cached = new OffscreenCanvas(Math.max(1, Math.ceil(rw)), Math.max(1, Math.ceil(rh)));
+        const g = cached.getContext('2d');
+        g.translate(-rx, -ry);
+        setFont(g, typo.display, size);
+        g.textBaseline = 'alphabetic';
+        g.shadowColor = rgba(theme.particle, theme.dark ? 0.42 : 0.28);
+        g.shadowBlur = 46 * u;
+        g.fillStyle = accentGradient(g, theme, y - asc, y + desc);
+        drawTracked(g, tx.number, cx, y, size * 0.02);
+        cached = cached.transferToImageBitmap();
+      env.cache.set(ckey, cached);
+      }
+      let src = cached;
+      let sx = 0;
+      let sy = 0;
       const sp = prog(tau, T(1.9), T(3.4));
       if (sp > 0 && sp < 1) {
+        L.clearRect(rx - 2, ry - 2, rw + 4, rh + 4);
+        L.drawImage(cached, rx, ry);
+        src = env.numLayer;
+        sx = rx;
+        sy = ry;
         L.save();
         L.globalCompositeOperation = 'source-atop';
         const bx = lerp(cx - tw / 2 - 260 * u, cx + tw / 2 + 260 * u, easeInOutSine(sp));
@@ -125,8 +142,7 @@ function drawLockupBody(ctx, env, tau, s, k, opts = {}) {
       ctx.translate(cx, ccy);
       ctx.scale(sc, sc);
       ctx.translate(-cx, -ccy);
-      if (blur > 0.4) ctx.filter = `blur(${blur.toFixed(2)}px)`;
-      ctx.drawImage(env.numLayer, rx, ry, rw, rh, rx, ry, rw, rh);
+      withBlur(ctx, blur, rx, ry, rw, rh, (g) => g.drawImage(src, sx, sy, rw, rh, rx, ry, rw, rh));
       ctx.restore();
     }
   }
@@ -263,7 +279,7 @@ function drawRays(ctx, env, t, alpha) {
     g.globalCompositeOperation = 'source-in';
     g.fillStyle = theme.particle;
     g.fillRect(0, 0, 96, 512);
-    env._raySprite = c;
+    env._raySprite = c.transferToImageBitmap();
   }
   ctx.save();
   ctx.globalCompositeOperation = theme.dark ? 'lighter' : 'source-over';
@@ -368,10 +384,8 @@ function drawIntroMosaic(ctx, seg, tau, env) {
   }
   L.restore();
   const dim = easeInOutSine(prog(tau, 2.2 * k, 3.6 * k));
-  ctx.save();
-  if (dim > 0.01) ctx.filter = `blur(${(5 * u * dim).toFixed(2)}px)`;
-  ctx.drawImage(env.layer, 0, 0);
-  ctx.restore();
+  if (dim > 0.01) drawDownBlurred(ctx, env.layer, W, H, 5 * u * dim + 2, 3);
+  else ctx.drawImage(env.layer, 0, 0);
   // 텍스트 가독성 확보용 오버레이
   ctx.save();
   ctx.globalAlpha = dim;
@@ -413,22 +427,24 @@ function drawIntroCounter(ctx, seg, tau, env) {
       const size = 210 * u;
       ctx.save();
       ctx.globalAlpha = a;
-      if (aOut > 0) ctx.filter = `blur(${(14 * u * aOut).toFixed(2)}px)`;
       const sc = 1 - 0.06 * aOut;
       ctx.translate(W / 2, H * 0.5);
       ctx.scale(sc, sc);
       ctx.translate(-W / 2, -H * 0.5);
-      drawOdometer(ctx, env, v, W / 2, 610 * u + env.oy, size, y1);
-      // 진행 라인
-      const lw = 640 * u * cp;
-      ctx.fillStyle = theme.accentSolid;
-      ctx.globalAlpha = a * 0.8;
-      ctx.fillRect(W / 2 - lw / 2, 680 * u + env.oy, lw, Math.max(1, 2 * u));
-      ctx.globalAlpha = a * 0.9;
-      setFont(ctx, typo.eyebrow, 26 * u);
-      ctx.fillStyle = theme.textDim;
-      drawTracked(ctx, `${y0}`, W / 2 - 320 * u, 730 * u + env.oy, 6 * u, 'left');
-      drawTracked(ctx, `${y1}`, W / 2 + 320 * u, 730 * u + env.oy, 6 * u, 'right');
+      const body = (g) => {
+        drawOdometer(g, env, v, W / 2, 610 * u + env.oy, size, y1);
+        const lw = 640 * u * cp;
+        g.fillStyle = theme.accentSolid;
+        g.globalAlpha = 0.8;
+        g.fillRect(W / 2 - lw / 2, 680 * u + env.oy, lw, Math.max(1, 2 * u));
+        g.globalAlpha = 0.9;
+        setFont(g, typo.eyebrow, 26 * u);
+        g.fillStyle = theme.textDim;
+        drawTracked(g, `${y0}`, W / 2 - 320 * u, 730 * u + env.oy, 6 * u, 'left');
+        drawTracked(g, `${y1}`, W / 2 + 320 * u, 730 * u + env.oy, 6 * u, 'right');
+        g.globalAlpha = 1;
+      };
+      withBlur(ctx, 14 * u * aOut, W / 2 - 380 * u, 360 * u + env.oy, 760 * u, 400 * u, body);
       ctx.restore();
     }
   }
@@ -553,6 +569,8 @@ function drawPhoto(ctx, seg, tau, env) {
   } else {
     // 블러 배경 + 그림자 있는 원본 비율 사진
     const bgz = 1.08 + 0.06 * e * Math.max(0.3, amt);
+    // 이미 흐린 배경·그림자는 고품질 리샘플링이 의미 없음 → 빠른 보간 (소프트웨어 렌더링에서 2배 이상 빠름)
+    ctx.imageSmoothingQuality = 'low';
     drawCover(ctx, a.bg, a.bg.width, a.bg.height, 0, 0, W, H, bgz);
     ctx.fillStyle = theme.dark ? theme.scrim + '0.42)' : 'rgba(18,12,6,0.3)';
     ctx.fillRect(0, 0, W, H);
@@ -568,13 +586,27 @@ function drawPhoto(ctx, seg, tau, env) {
     const drift = (m.type === 'panLeft' ? -1 : m.type === 'panRight' ? 1 : 0) * 18 * u * amt;
     const x = (W - dw) / 2 + lerp(-drift, drift, e);
     const y = (H - dh) / 2;
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
-    ctx.shadowBlur = 70 * u;
-    ctx.shadowOffsetY = 22 * u;
+    // 그림자: 사진마다 1/4 해상도로 한 번만 블러해 캐시 → 매 프레임 그림자 블러 계산 제거
+    const bw0 = iw * Math.min(maxW / iw, maxH / ih) + pad * 2;
+    const bh0 = ih * Math.min(maxW / iw, maxH / ih) + pad * 2;
+    const B = 110 * u;
+    const sk = `shadow|${Math.round(bw0)}x${Math.round(bh0)}|${W}x${H}`;
+    let sh = env.cache.get(sk);
+    if (!sh) {
+      const q = 4;
+      sh = new OffscreenCanvas(Math.ceil((bw0 + B * 2) / q), Math.ceil((bh0 + B * 2) / q));
+      const g = sh.getContext('2d');
+      g.filter = `blur(${((35 * u) / q).toFixed(2)}px)`;
+      g.fillStyle = 'rgba(0,0,0,0.62)';
+      g.fillRect(B / q, B / q, bw0 / q, bh0 / q);
+      sh = sh.transferToImageBitmap();
+      env.cache.set(sk, sh);
+    }
+    const zs = (dw + pad * 2) / bw0;
+    ctx.drawImage(sh, x - pad - B * zs, y - pad - B * zs + 22 * u, (bw0 + B * 2) * zs, (bh0 + B * 2) * zs);
+    ctx.imageSmoothingQuality = 'high';
     ctx.fillStyle = frame ? '#fbf8f1' : '#000';
     ctx.fillRect(x - pad, y - pad, dw + pad * 2, dh + pad * 2);
-    ctx.restore();
     ctx.drawImage(a.img, x, y, dw, dh);
     if (frame) {
       ctx.strokeStyle = 'rgba(0,0,0,0.08)';
@@ -648,8 +680,36 @@ function drawCaption(ctx, seg, tau, env) {
   const label = (it.label || '').trim();
   const cap = (it.caption || '').trim();
   const capY = 985 * u;
+  // 등장 애니메이션이 끝난 뒤에는 미리 그린 자막 이미지를 재사용 (글자별 그림자 계산 제거)
+  const capStagger = Math.min(0.03, 0.8 / Math.max(1, visibleChars(cap)));
+  const tSteady = Math.max(inS + 1.25, inS + 0.35 + capStagger * visibleChars(cap) + 0.75);
+  if (tau >= tSteady) {
+    const ck = `cap|${label}|${cap}|${align}|${W}x${H}|${typo.display.family}|${typo.body.family}|${theme.dark}`;
+    let cc = env.cache.get(ck);
+    const top = 760 * u;
+    const hgt = 300 * u;
+    if (!cc) {
+      cc = new OffscreenCanvas(W, Math.ceil(hgt));
+      const g = cc.getContext('2d');
+      g.translate(0, -top);
+      drawCaptionText(g, env, label, cap, x, capY, align, centered, 1, 1, 1e9, 0, capStagger);
+      cc = cc.transferToImageBitmap();
+      env.cache.set(ck, cc);
+    }
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.drawImage(cc, 0, H - 1080 * u + top);
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.translate(slide, H - 1080 * u);
+  drawCaptionText(ctx, env, label, cap, x, capY, align, centered, a, easeOutCubic(prog(tau, inS + 0.3, inS + 1.2)) * a, tau, inS + 0.35, capStagger);
+  ctx.restore();
+}
+
+function drawCaptionText(ctx, env, label, cap, x, capY, align, centered, a, lineA, tau, revealStart, stagger) {
+  const { W, u, theme, typo } = env;
   ctx.shadowColor = 'rgba(0,0,0,0.5)';
   ctx.shadowBlur = 18 * u;
   if (label) {
@@ -661,7 +721,6 @@ function drawCaption(ctx, seg, tau, env) {
     drawTracked(ctx, label, x, ly, size * 0.02, align);
   }
   if (cap) {
-    const lineA = easeOutCubic(prog(tau, inS + 0.3, inS + 1.2)) * a;
     ctx.shadowColor = 'transparent';
     ctx.globalAlpha = lineA;
     ctx.fillStyle = env.darkAccentSolid;
@@ -672,10 +731,9 @@ function drawCaption(ctx, seg, tau, env) {
     setFont(ctx, typo.body, size, Math.max(500, typo.body.weight));
     ctx.fillStyle = '#fbf7ee';
     drawCharsReveal(ctx, cap, x, capY, {
-      t: tau, start: inS + 0.35, stagger: Math.min(0.03, 0.8 / Math.max(1, visibleChars(cap))), dur: 0.7, rise: 10 * u, tracking: size * 0.01, align, alpha: a,
+      t: tau, start: revealStart, stagger, dur: 0.7, rise: 10 * u, tracking: size * 0.01, align, alpha: a,
     });
   }
-  ctx.restore();
 }
 
 // =====================================================================
@@ -687,7 +745,9 @@ function drawChapter(ctx, seg, tau, env) {
   const bgA = seg.nextPhoto ? env.assets.get(itemKey(seg.nextPhoto)) : null;
   const p = clamp(tau / seg.dur);
   if (bgA && !bgA.failed) {
+    ctx.imageSmoothingQuality = 'low';
     drawCover(ctx, bgA.bg, bgA.bg.width, bgA.bg.height, 0, 0, W, H, lerp(1.18, 1.06, easeOutCubic(p)));
+    ctx.imageSmoothingQuality = 'high';
     ctx.fillStyle = theme.dark ? theme.scrim + '0.66)' : rgba(theme.bg[0], 0.8);
     ctx.fillRect(0, 0, W, H);
     const rg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.6);
@@ -718,11 +778,14 @@ function drawChapter(ctx, seg, tau, env) {
     ctx.save();
     ctx.globalAlpha = a * outA;
     const blur = 16 * u * (1 - a);
-    if (blur > 0.4) ctx.filter = `blur(${blur.toFixed(2)}px)`;
-    ctx.shadowColor = rgba(theme.particle, theme.dark ? 0.35 : 0.2);
-    ctx.shadowBlur = 40 * u;
-    ctx.fillStyle = accentGradient(ctx, theme, ty - size * 0.72, ty + size * 0.05);
-    drawTracked(ctx, title, cx, ty, trk);
+    const tw = measureTracked(ctx, title, trk);
+    withBlur(ctx, blur, cx - tw / 2 - 60 * u, ty - size - 50 * u, tw + 120 * u, size * 1.4 + 100 * u, (g) => {
+      setFont(g, typo.display, size);
+      g.shadowColor = rgba(theme.particle, theme.dark ? 0.35 : 0.2);
+      g.shadowBlur = 40 * u;
+      g.fillStyle = accentGradient(g, theme, ty - size * 0.72, ty + size * 0.05);
+      drawTracked(g, title, cx, ty, trk);
+    });
     ctx.restore();
   }
   const lg = easeInOutCubic(prog(tau, s0 + 0.6, s0 + 1.8));
@@ -949,10 +1012,22 @@ function drawIntroCinematic(ctx, seg, tau, env) {
     const s = Math.max(W / a.w, H / a.h) * lerp(1.16, 1.04, easeOutCubic(p));
     const dw = a.w * s;
     const dh = a.h * s;
+    // 흐림·채도·밝기 보정은 사진마다 한 번만 계산해 캐시 (매 프레임 전체 화면 필터 제거)
+    const ck = `cine|${itemKey(ph)}|${W}x${H}`;
+    let bg = env.cache.get(ck);
+    if (!bg) {
+      const bw = Math.max(1, Math.round(a.w / 2));
+      const bh = Math.max(1, Math.round(a.h / 2));
+      bg = new OffscreenCanvas(bw, bh);
+      const g = bg.getContext('2d');
+      g.filter = `blur(${(1.25 * u).toFixed(1)}px) saturate(0.55) brightness(0.5)`;
+      g.drawImage(a.img, 0, 0, bw, bh);
+      bg = bg.transferToImageBitmap();
+      env.cache.set(ck, bg);
+    }
     ctx.save();
     ctx.globalAlpha = easeOutCubic(prog(tau, 0.2, 2.4));
-    ctx.filter = `blur(${(2.5 * u).toFixed(1)}px) saturate(0.55) brightness(0.5)`;
-    ctx.drawImage(a.img, (W - dw) / 2 + lerp(36, -36, p) * u, (H - dh) / 2, dw, dh);
+    ctx.drawImage(bg, (W - dw) / 2 + lerp(36, -36, p) * u, (H - dh) / 2, dw, dh);
     ctx.restore();
   } else {
     drawThemeBackground(ctx, W, H, { ...theme, bg: theme.dark ? theme.bg : ['#07070a', '#1a1a22'] }, tau, 0.6);
@@ -999,11 +1074,15 @@ function drawIntroCinematic(ctx, seg, tau, env) {
     setFont(ctx, typo.title, size);
     ctx.save();
     ctx.globalAlpha = a2;
-    if (a2 < 1) ctx.filter = `blur(${(10 * u * (1 - a2)).toFixed(2)}px)`;
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
-    ctx.shadowBlur = 24 * u;
-    ctx.fillStyle = '#fbf8f1';
-    drawTracked(ctx, tx.title, cx, 575 * u, size * lerp(0.3, 0.06, easeOutQuart(prog(tau, 1.5 * k, 4.5 * k))));
+    const trk2 = size * lerp(0.3, 0.06, easeOutQuart(prog(tau, 1.5 * k, 4.5 * k)));
+    const tw2 = measureTracked(ctx, tx.title, trk2);
+    withBlur(ctx, a2 < 1 ? 10 * u * (1 - a2) : 0, cx - tw2 / 2 - 50 * u, 575 * u - size - 40 * u, tw2 + 100 * u, size * 1.4 + 80 * u, (g) => {
+      setFont(g, typo.title, size);
+      g.shadowColor = 'rgba(0,0,0,0.6)';
+      g.shadowBlur = 24 * u;
+      g.fillStyle = '#fbf8f1';
+      drawTracked(g, tx.title, cx, 575 * u, trk2);
+    });
     ctx.restore();
   }
   const lg = easeInOutCubic(prog(tau, 2.6 * k, 3.8 * k));

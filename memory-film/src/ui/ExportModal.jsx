@@ -1,13 +1,29 @@
 // 영상 내보내기 진행 창
 import React, { useEffect, useRef, useState } from 'react';
 import { Renderer } from '../engine/renderer.js';
-import { QUALITY, outputSize } from '../engine/presets.js';
+import { QUALITY, RESOLUTIONS, outputSize } from '../engine/presets.js';
 import { fmtTime } from '../engine/math.js';
 import { api, baseName } from '../platform.js';
 import { Button, Icon } from './controls.jsx';
 
-export function ExportModal({ project, outPath, onClose }) {
-  const [st, setSt] = useState({ phase: 'prepare', done: 0, total: 1, elapsed: 0, fps: 0 });
+const SPEED_KEY = 'memoria.exportSpeed.v1';
+
+/** 이 PC에서 측정된 제작 속도로 예상 시간 계산 (초). 기록이 없으면 null */
+export function estimateExportSeconds(w, h, frames) {
+  try {
+    const sp = JSON.parse(localStorage.getItem(SPEED_KEY) || 'null');
+    if (!sp || !sp.pps) return null;
+    return (frames * w * h) / sp.pps + 4;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * opts.draft: 빠른 확인용 시안 (720p · 빠른 압축)
+ */
+export function ExportModal({ project, outPath, onClose, draft = false }) {
+  const [st, setSt] = useState({ phase: 'prepare', done: 0, total: 1, elapsed: 0, fps: 0, encoderLabel: '' });
   const cancelRef = useRef(false);
   const thumbRef = useRef(null);
   const startedRef = useRef(false);
@@ -15,62 +31,97 @@ export function ExportModal({ project, outPath, onClose }) {
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
-    let renderer = null;
-    (async () => {
-      const res = outputSize(project);
-      const q = QUALITY[project.output.quality] || QUALITY.high;
-      const fps = Number(project.output.fps) || 30;
+    const proj = draft ? { ...project, output: { ...project.output, resolution: '720p', quality: 'draft' } } : project;
+
+    const run = async (encoderPref) => {
+      let renderer = null;
+      let encoder = 'libx264';
+      const res = outputSize(proj);
+      const q = QUALITY[proj.output.quality] || QUALITY.high;
+      const fps = Number(proj.output.fps) || 30;
       const t0 = performance.now();
       try {
         const canvas = document.createElement('canvas');
-        renderer = new Renderer({ canvas, width: res.w, height: res.h, assetCapacity: 10 });
-        const tl = renderer.setProject(project);
+        renderer = new Renderer({ canvas, width: res.w, height: res.h, assetCapacity: 12 });
+        const tl = renderer.setProject(proj);
         await renderer.prepareFonts();
-        renderer.warmup();
+        renderer.warmup(true); // 이 영상에 쓰이는 전환만 컴파일
+        const comp = renderer.compositor;
+        const cap = comp.setupCapture(true); // GPU에서 YUV420 변환 (가능한 크기일 때)
         const N = Math.ceil(tl.total * fps);
-        setSt((s) => ({ ...s, total: N, phase: 'render' }));
-        await api.exportStart({
+        setSt((s) => ({ ...s, total: N, phase: 'render', done: 0 }));
+        const started = await api.exportStart({
           path: outPath,
           width: res.w,
           height: res.h,
           fps,
           crf: q.crf,
           preset: q.preset,
+          mbps: (RESOLUTIONS[proj.output.resolution] || RESOLUTIONS['1080p']).bitrate,
+          encoder: encoderPref,
+          pixfmt: cap.format,
           total: N / fps,
-          audio: project.music,
+          audio: proj.music,
         });
+        encoder = started.encoder;
+        setSt((s) => ({ ...s, encoderLabel: started.label }));
         const tctx = thumbRef.current?.getContext('2d');
-        // 프레임 버퍼 2개를 번갈아 사용 (4K에서 매 프레임 33MB 할당 방지)
-        const bufs = [new Uint8Array(res.w * res.h * 4), new Uint8Array(res.w * res.h * 4)];
+        const bufs = [new Uint8Array(cap.bytes), new Uint8Array(cap.bytes)];
         let pending = null;
         let lastUi = 0;
+        // 파이프라인: 프레임 i를 그리는 동안 프레임 i-1을 GPU에서 읽어 FFmpeg로 전송
+        const flush = async (k) => {
+          const b = await comp.captureFinish(k % 2, bufs[k % 2]);
+          if (pending) await pending;
+          pending = api.exportFrame(b);
+        };
         for (let i = 0; i < N; i++) {
           if (cancelRef.current) throw new Error('__cancel');
-          await renderer.renderAt(i / fps, 2);
-          if (renderer.compositor.isLost()) throw new Error('그래픽 장치가 초기화되어 영상을 계속 만들 수 없습니다. 다른 프로그램을 닫고 다시 시도해 주세요.');
-          if (pending) await pending;
-          const buf = renderer.readPixels(bufs[i % 2]);
-          pending = api.exportFrame(buf);
+          await renderer.renderAt(i / fps, 4);
+          if (comp.isLost()) throw new Error('그래픽 장치가 초기화되어 영상을 계속 만들 수 없습니다. 다른 프로그램을 닫고 다시 시도해 주세요.');
+          comp.captureStart(i % 2);
+          if (i > 0) await flush(i - 1);
           const now = performance.now();
-          if (now - lastUi > 250 || i === N - 1) {
+          if (now - lastUi > 300 || i === N - 1) {
             lastUi = now;
             const el = (now - t0) / 1000;
             setSt((s) => ({ ...s, done: i + 1, elapsed: el, fps: (i + 1) / el }));
-            if (tctx) tctx.drawImage(canvas, 0, 0, tctx.canvas.width, tctx.canvas.height);
+            api.exportProgress?.((i + 1) / N);
+            if (tctx) {
+              comp.present();
+              tctx.drawImage(canvas, 0, 0, tctx.canvas.width, tctx.canvas.height);
+            }
           }
         }
+        if (N > 0) await flush(N - 1);
         await pending;
         setSt((s) => ({ ...s, phase: 'finalize' }));
         const result = await api.exportFinish();
-        setSt((s) => ({ ...s, phase: 'done', result, elapsed: (performance.now() - t0) / 1000 }));
+        const elapsed = (performance.now() - t0) / 1000;
+        try {
+          localStorage.setItem(SPEED_KEY, JSON.stringify({ pps: (N * res.w * res.h) / elapsed, encoder, at: Date.now() }));
+        } catch {
+          /* 무시 */
+        }
+        setSt((s) => ({ ...s, phase: 'done', result, elapsed }));
+        api.notifyDone?.('영상이 완성되었습니다', baseName(result.path));
       } catch (e) {
         await api.exportCancel().catch(() => {});
-        if (e.message === '__cancel') setSt((s) => ({ ...s, phase: 'cancelled' }));
-        else setSt((s) => ({ ...s, phase: 'error', error: e.message || String(e) }));
+        api.exportProgress?.(-1);
+        if (e.message === '__cancel') return setSt((s) => ({ ...s, phase: 'cancelled' }));
+        // 그래픽카드 인코더가 실패하면 CPU 인코딩으로 자동 재시도
+        if (encoder !== 'libx264' && encoderPref !== 'cpu') {
+          setSt((s) => ({ ...s, phase: 'prepare', note: '그래픽 가속 인코딩에 실패해 CPU 방식으로 다시 만듭니다…' }));
+          renderer?.dispose();
+          renderer = null;
+          return run('cpu');
+        }
+        setSt((s) => ({ ...s, phase: 'error', error: e.message || String(e) }));
       } finally {
         renderer?.dispose();
       }
-    })();
+    };
+    run(proj.output.encoder === 'cpu' ? 'cpu' : 'auto');
   }, []);
 
   const pct = Math.min(100, (st.done / st.total) * 100);
@@ -84,7 +135,7 @@ export function ExportModal({ project, outPath, onClose }) {
           <>
             <div className="modal-title">
               <span className="spinner" />
-              {st.phase === 'prepare' ? '준비하는 중…' : st.phase === 'finalize' ? '마무리하는 중…' : '영상을 만드는 중입니다'}
+              {st.phase === 'prepare' ? '준비하는 중…' : st.phase === 'finalize' ? '마무리하는 중…' : draft ? '확인용 시안을 만드는 중입니다' : '영상을 만드는 중입니다'}
             </div>
             <canvas ref={thumbRef} width={Math.round(270 * (outputSize(project).w / outputSize(project).h))} height={270} className="export-thumb" style={{ aspectRatio: `${outputSize(project).w} / ${outputSize(project).h}` }} />
             <div className="progress">
@@ -99,7 +150,10 @@ export function ExportModal({ project, outPath, onClose }) {
               </span>
               <span>{st.fps ? `${st.fps.toFixed(1)} 프레임/초` : ''}</span>
             </div>
-            <p className="hint small">창을 최소화해도 계속 진행됩니다. 완료될 때까지 PC를 끄지 마세요.</p>
+            {st.note && <p className="hint small">{st.note}</p>}
+            <p className="hint small">
+              {st.encoderLabel && <>인코딩: {st.encoderLabel} · </>}창을 최소화하거나 다른 작업을 해도 계속 진행되며, 끝나면 알림이 뜹니다.
+            </p>
             <div className="modal-actions">
               <Button variant="soft" onClick={() => (cancelRef.current = true)} disabled={st.phase === 'finalize'}>
                 취소

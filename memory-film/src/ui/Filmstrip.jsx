@@ -129,7 +129,7 @@ const TransitionChip = memo(function TransitionChip({ resolved, itemId, transiti
   );
 });
 
-export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorder, onSetTransition, onSetAllTransitions, onSelectSpecial, onDropFiles, onAddPhotos }) {
+export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect, onReorder, onSetTransition, onSetAllTransitions, onSelectSpecial, onDropFiles, onAddPhotos }) {
   const [dragId, setDragId] = useState(null);
   // 카드·전환 칩 메모이제이션이 깨지지 않도록 안정적인 콜백 사용
   const cb = useRef({});
@@ -197,7 +197,14 @@ export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorde
   let photoNo = 0;
   const introSeg = segByKey.get('intro');
   return (
-    <div className="filmstrip" ref={scrollRef} onDragOver={onDragOver} onDrop={onDrop} onDragLeave={(e) => e.currentTarget === e.target && setDropIdx(null)} onDragEnd={() => { setDragId(null); setDropIdx(null); }}>
+    <div
+      className={'filmstrip' + (compact ? ' compact' : '')}
+      ref={scrollRef}
+      onWheel={(e) => {
+        // 일반 마우스 휠(세로)로도 가로 스크롤
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
+      }}
+      onDragOver={onDragOver} onDrop={onDrop} onDragLeave={(e) => e.currentTarget === e.target && setDropIdx(null)} onDragEnd={() => { setDragId(null); setDropIdx(null); }}>
       {project.intro.enabled && (
         <>
           <div className={'card special' + (selected.has('intro') ? ' selected' : '') + (activeKey === 'intro' ? ' active' : '')} onMouseDown={() => onSelectSpecial('intro')}>

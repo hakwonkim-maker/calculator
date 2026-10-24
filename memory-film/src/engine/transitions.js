@@ -436,6 +436,9 @@ void main() {
 }
 `;
 
+/** blurFrom/blurTo(밉맵 기반 블러)를 쓰는 전환 — 이때만 밉맵 생성 */
+export const USES_MIPMAPS = new Set(Object.keys(SRC).filter((k) => /blur(From|To)\(/.test(SRC[k])));
+
 export function transitionSource(id) {
   const body = SRC[id] || SRC.fade;
   return HEADER + BLUR_FN + body + FOOTER;
