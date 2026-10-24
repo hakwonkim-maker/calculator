@@ -321,7 +321,7 @@ vec4 transition(vec2 uv) {
   float n = 9.0;
   float f = fract(uv.x * n);
   float pp = clamp(progress * 1.35 - uv.x * 0.35, 0.0, 1.0);
-  pp = smoothstep(0.0, 1.0, pp);
+  pp = mix(-0.04, 1.04, smoothstep(0.0, 1.0, pp));
   float m = 1.0 - smoothstep(pp - 0.03, pp + 0.03, f);
   float shade = 1.0 - 0.35 * (1.0 - abs(f - pp) * 4.0) * step(abs(f - pp), 0.25) * sin(3.14159265 * progress);
   vec4 c = mix(getFromColor(uv), getToColor(uv), m);

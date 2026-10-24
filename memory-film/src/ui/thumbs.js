@@ -43,9 +43,18 @@ export function renderThumb(project, kind) {
     const t = seg.start + seg.dur * frac;
     await r.ensureAt(t);
     r.renderSync(t);
+    if (r.compositor.isLost()) {
+      // GPU 리셋 등: 렌더러를 다시 만들고 이 결과는 캐시하지 않음
+      r.dispose();
+      renderer = null;
+      return null;
+    }
     return r.canvas.toDataURL('image/jpeg', 0.86);
   }).catch(() => null));
   cache.set(key, job);
+  job.then((u) => {
+    if (!u) cache.delete(key);
+  });
   if (cache.size > 120) cache.delete(cache.keys().next().value);
   return job;
 }

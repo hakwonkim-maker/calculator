@@ -6,7 +6,7 @@ import { TRANSITIONS } from '../engine/transitions.js';
 import { CHAPTER_DEFAULT_DURATION } from '../engine/timeline.js';
 import { MOTION_OPTIONS } from '../engine/presets.js';
 import { photoMeta, updateItem, useMetaVersion } from './store.js';
-import { LOW_RES_PX, checklist } from './logic.js';
+import { isLowRes, photoDims, checklist } from './logic.js';
 import { fmtTime } from '../engine/math.js';
 import { baseName } from '../platform.js';
 
@@ -86,10 +86,10 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
     );
   }
 
-  const meta = photoMeta.get(item.path) || {};
+  const meta = { ...(photoMeta.get(item.path) || {}), ...(photoDims(item) || {}) };
   const rot = Number(item.rotate) || 0;
   const rotate = (d) => update((p) => updateItem(p, item.id, { rotate: (((rot + d) % 360) + 360) % 360, focus: undefined }));
-  const low = meta.w && Math.max(meta.w, meta.h) < LOW_RES_PX;
+  const low = isLowRes(item);
   const date = item.date ? new Date(item.date) : null;
   return (
     <div className="inspector">
@@ -139,7 +139,7 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
         </Field>
         <Slider
           label={item.duration ? '표시 시간 (개별)' : '표시 시간 (기본값 사용 중)'}
-          value={item.duration || project.style.photoDuration}
+          value={item.duration || tl.photoDuration || project.style.photoDuration}
           min={1.5}
           max={15}
           step={0.1}
@@ -148,7 +148,7 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
         />
         {item.duration ? (
           <button className="link" onClick={() => update((p) => updateItem(p, item.id, { duration: undefined }))}>
-            기본값({project.style.photoDuration.toFixed(1)}초)으로 되돌리기
+            기본값({(tl.photoDuration || project.style.photoDuration).toFixed(1)}초)으로 되돌리기
           </button>
         ) : null}
         <Field label="카메라 움직임">

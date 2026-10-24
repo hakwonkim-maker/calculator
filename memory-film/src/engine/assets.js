@@ -16,11 +16,14 @@ function splitKey(key) {
 }
 
 /** EXIF 방향이 반영된 비트맵을 추가로 회전 */
-async function decodeRotated(key) {
+async function decodeRotated(key, maxWidth = 0) {
   const { path, rot } = splitKey(key);
   const res = await fetch(mediaUrl(path));
   if (!res.ok) throw new Error('HTTP ' + res.status);
-  const full = await createImageBitmap(await res.blob(), { imageOrientation: 'from-image' });
+  // maxWidth: 썸네일용 — 디코딩 단계에서 바로 줄여 메모리·시간 절약
+  const opts = { imageOrientation: 'from-image' };
+  if (maxWidth) Object.assign(opts, { resizeWidth: maxWidth, resizeQuality: 'medium' });
+  const full = await createImageBitmap(await res.blob(), opts);
   if (!rot) return full;
   const swap = rot === 90 || rot === 270;
   const c = new OffscreenCanvas(swap ? full.height : full.width, swap ? full.width : full.height);
@@ -80,7 +83,17 @@ export class AssetManager {
 
   loadThumb(path) {
     let e = this.thumbCache.get(path);
+    if (e) {
+      // LRU: 최근 사용 순서 갱신
+      this.thumbCache.delete(path);
+      this.thumbCache.set(path, e);
+    }
     if (!e) {
+      while (this.thumbCache.size >= 72) {
+        const [k, old] = this.thumbCache.entries().next().value;
+        old.asset?.img?.close?.();
+        this.thumbCache.delete(k);
+      }
       e = { promise: null, asset: null };
       e.promise = this._decodeThumb(path)
         .then((a) => (e.asset = a))
@@ -160,14 +173,14 @@ const thumbQueue = [];
 let thumbActive = 0;
 const thumbUrlCache = new Map();
 
-export function uiThumb(path, size = 240, rotate = 0) {
+export function uiThumb(path, size = 240, rotate = 0, needDims = true) {
   const ak = itemKey({ path, rotate });
   const key = ak + '|' + size;
   if (thumbUrlCache.has(key)) return thumbUrlCache.get(key);
   const p = new Promise((resolve) => {
     thumbQueue.push(async () => {
       try {
-        const full = await decodeRotated(ak);
+        const full = await decodeRotated(ak, needDims ? 0 : size * 2);
         const s = Math.min(1, size / Math.min(full.width, full.height));
         const w = Math.round(full.width * s);
         const h = Math.round(full.height * s);
@@ -189,7 +202,7 @@ export function uiThumb(path, size = 240, rotate = 0) {
 
 function pump() {
   while (thumbActive < 3 && thumbQueue.length) {
-    const job = thumbQueue.shift();
+    const job = thumbQueue.pop(); // 최근 요청(지금 보이는 카드·선택한 사진) 우선
     thumbActive++;
     job().finally(() => {
       thumbActive--;

@@ -58,7 +58,16 @@ export class Compositor {
 
   /** 모든 셰이더를 미리 컴파일 (첫 전환에서 끊김 방지) */
   warmup(ids) {
-    for (const id of ids) this._program(id);
+    const failed = [];
+    for (const id of ids) {
+      try {
+        this._program(id);
+      } catch (e) {
+        failed.push(id);
+        console.warn(e);
+      }
+    }
+    return failed;
   }
 
   upload(which, source) {
@@ -72,7 +81,15 @@ export class Compositor {
   draw({ transition, progress, time, fromLook, toLook, look, vignette, grain }) {
     const gl = this.gl;
     const { width: w, height: h } = this.canvas;
-    const { p, u } = this._program(transition);
+    let prog;
+    try {
+      prog = this._program(transition);
+    } catch (e) {
+      // 특정 그래픽 드라이버에서 컴파일이 안 되는 효과는 디졸브로 대체
+      console.warn(e);
+      prog = this._program(transition === 'none' ? 'none' : 'fade');
+    }
+    const { p, u } = prog;
     gl.viewport(0, 0, w, h);
     gl.useProgram(p);
     gl.bindVertexArray(this.vao);

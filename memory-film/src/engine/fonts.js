@@ -8,7 +8,7 @@ export async function ensureFonts(project) {
   const typo = TYPOGRAPHY[project.style.typography] || TYPOGRAPHY.classic;
   const tx = project.text;
   const texts = [
-    tx.number, tx.eyebrow, tx.title, tx.subtitle, tx.org, tx.closingTitle, tx.closingMessage, tx.closingSub,
+    tx.number, tx.eyebrow, tx.title, tx.subtitle, tx.org, tx.closingTitle, tx.closingMessage, tx.closingSub, tx.credits,
     String(tx.startYear), String(tx.endYear), '0123456789 —·',
     '사진을 불러올 수 없습니다',
     ...project.items.flatMap((i) => [i.caption, i.label, i.title, i.subtitle]),

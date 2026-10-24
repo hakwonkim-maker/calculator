@@ -16,10 +16,44 @@ const MOTIONS = [
 ];
 
 export const CHAPTER_DEFAULT_DURATION = 4.2;
+export const MIN_PHOTO_DURATION = 0.5;
 
+/** 사진이 짧으면 전환도 짧게 (사진이 최소 0.4초 + 전환의 절반 이상은 온전히 보이도록) */
+function effectiveT(T, pd) {
+  return Math.max(0.2, Math.min(T, (pd - 0.25) * 0.6));
+}
+
+/**
+ * 타임라인 생성.
+ * style.lengthMode === 'total' 이면 style.targetDuration(초)에 맞도록
+ * '사진 1장당 시간'을 자동 계산한다 (사진을 더 넣어도 전체 길이는 유지).
+ */
 export function buildTimeline(project) {
   const st = project.style;
   const T = Math.max(0.3, Number(st.transitionDuration) || 1.2);
+  const nAuto = project.items.filter((i) => i.type === 'photo' && !Number(i.duration)).length;
+  const target = Number(st.targetDuration) || 0;
+  if (st.lengthMode !== 'total' || !nAuto || target <= 0) {
+    const pd = Math.max(MIN_PHOTO_DURATION, Number(st.photoDuration) || 4.5);
+    return { ...buildCore(project, pd, effectiveT(T, pd)), photoDuration: pd };
+  }
+  // 전체 길이 고정: 총 길이(pd)는 거의 선형이므로 할선법으로 2~4회 만에 수렴
+  const total = (pd) => buildCore(project, pd, effectiveT(T, pd)).total;
+  let pd = 3 + (target - total(3)) / Math.max(1e-6, total(4) - total(3));
+  for (let k = 0; k < 4; k++) {
+    pd = Math.min(60, Math.max(MIN_PHOTO_DURATION, pd));
+    const err = target - total(pd);
+    if (Math.abs(err) < 0.02) break;
+    const slope = (total(pd + 0.5) - total(pd)) / 0.5;
+    pd += err / Math.max(1e-6, slope);
+  }
+  pd = Math.min(60, Math.max(MIN_PHOTO_DURATION, pd));
+  const tl = buildCore(project, pd, effectiveT(T, pd));
+  return { ...tl, photoDuration: pd, target, fitShort: tl.total > target + 0.5 };
+}
+
+function buildCore(project, photoDuration, T) {
+  const st = { ...project.style, photoDuration };
   const seed = st.seed || 1;
   const pool = (TRANSITION_STYLES[st.transitionStyle] || TRANSITION_STYLES.elegant).pool;
   const motionAmt = MOTION_LEVELS[st.motion] ?? 1;
@@ -30,7 +64,12 @@ export function buildTimeline(project) {
     if (it.type === 'photo') raw.push({ type: 'photo', key: it.id, item: it, dur: (Number(it.duration) || st.photoDuration) + T });
     else if (it.type === 'chapter') raw.push({ type: 'chapter', key: it.id, item: it, dur: (Number(it.duration) || CHAPTER_DEFAULT_DURATION) + T });
   }
-  if (project.outro.enabled) raw.push({ type: 'outro', key: 'outro', dur: Number(project.outro.duration) || 10 });
+  if (project.outro.enabled) {
+    let od = Number(project.outro.duration) || 10;
+    // 크레딧이 길면 읽을 수 있는 속도(초당 약 2.2줄)가 되도록 엔딩을 자동으로 늘림
+    if (project.outro.style === 'credits') od = Math.max(od, (String(project.text.credits || '').split('\n').length / 2.2 + 3) / 0.62 + 2);
+    raw.push({ type: 'outro', key: 'outro', dur: od });
+  }
 
   // 경계(전환) 결정
   let prevTrans = null;
@@ -70,7 +109,7 @@ export function buildTimeline(project) {
   for (const s of raw) {
     s.tIn = s.tIn || 0;
     s.tOut = s.tOut || 0;
-    s.dur = Math.max(s.dur, s.tIn + s.tOut + 0.4);
+    s.dur = Math.max(s.dur, s.tIn + s.tOut + (s.type === 'photo' ? 0.25 : 0.4));
   }
 
   // 시작 시간 계산
@@ -135,15 +174,16 @@ export function activeAt(tl, t) {
   return { from: b, to: null, p: 0, transition: 'none' };
 }
 
-/** 사진 1장당 시간을 음악 길이에 맞게 역산 */
+/** 목표 길이에 맞는 사진 1장당 시간 (사진이 없으면 null) */
 export function fitPhotoDurationToLength(project, targetSeconds) {
-  const nPhotos = project.items.filter((i) => i.type === 'photo' && !i.duration).length;
+  const nPhotos = project.items.filter((i) => i.type === 'photo' && !Number(i.duration)).length;
   if (!nPhotos) return null;
-  const probe = (pd) => buildTimeline({ ...project, style: { ...project.style, photoDuration: pd } }).total;
-  const t1 = probe(3);
-  const t2 = probe(4);
-  const slope = t2 - t1; // = 사진 수 (클램프 없을 때)
-  if (slope <= 0) return null;
-  const pd = 3 + (targetSeconds - t1) / slope;
-  return Math.round(pd * 100) / 100;
+  const tl = buildTimeline({ ...project, style: { ...project.style, lengthMode: 'total', targetDuration: targetSeconds } });
+  return Math.round(tl.photoDuration * 100) / 100;
+}
+
+/** 전체 길이 고정 모드에서 최소로 줄였을 때의 길이 (사진이 너무 많은지 판단용) */
+export function minimumLength(project) {
+  const T = Math.max(0.3, Number(project.style.transitionDuration) || 1.2);
+  return buildCore(project, MIN_PHOTO_DURATION, effectiveT(T, MIN_PHOTO_DURATION)).total;
 }

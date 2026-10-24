@@ -1,35 +1,58 @@
 // 하단 필름스트립: 순서 편집(드래그), 선택, 전환 효과 지정
-import React, { memo, useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { uiThumb } from '../engine/assets.js';
 import { TRANSITIONS } from '../engine/transitions.js';
-import { photoMeta, setPhotoMeta, useMetaVersion } from './store.js';
-import { LOW_RES_PX } from './logic.js';
+import { setPhotoMeta, usePhotoMeta } from './store.js';
+import { isLowRes, photoDims } from './logic.js';
 import { Icon } from './controls.jsx';
 
-export function Thumb({ path, className, rotate = 0 }) {
-  const [src, setSrc] = useState(null);
+/** 화면에 보일 때만 썸네일을 만든다 (사진 수백 장도 가볍게) */
+function useInView(ref, enabled) {
+  const [seen, setSeen] = useState(!enabled);
   useEffect(() => {
+    if (!enabled || seen || !ref.current) return undefined;
+    const io = new IntersectionObserver(
+      (es) => {
+        if (es.some((e) => e.isIntersecting)) {
+          setSeen(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: '300px 900px' },
+    );
+    io.observe(ref.current);
+    return () => io.disconnect();
+  }, [enabled, seen, ref]);
+  return seen;
+}
+
+export function Thumb({ path, className, rotate = 0, lazy = false, needDims = true }) {
+  const [src, setSrc] = useState(null);
+  const boxRef = useRef(null);
+  const visible = useInView(boxRef, lazy);
+  useEffect(() => {
+    if (!visible) return undefined;
     let alive = true;
-    uiThumb(path, 240, rotate).then((r) => {
+    uiThumb(path, 240, rotate, needDims).then((r) => {
       if (!alive) return;
       if (r.url) {
         setSrc(r.url);
         // 메타 정보는 원본 기준 (회전 전)
         const swap = rotate === 90 || rotate === 270;
-        setPhotoMeta(path, { w: swap ? r.h : r.w, h: swap ? r.w : r.h, error: false });
+        setPhotoMeta(path, needDims ? { w: swap ? r.h : r.w, h: swap ? r.w : r.h, error: false } : { error: false });
       } else setPhotoMeta(path, { error: true });
     });
     return () => {
       alive = false;
     };
-  }, [path, rotate]);
-  return src ? <img className={className} src={src} alt="" draggable={false} /> : <div className={className + ' thumb-loading'} />;
+  }, [path, rotate, visible]);
+  return src ? <img className={className} src={src} alt="" draggable={false} /> : <div ref={boxRef} className={className + ' thumb-loading'} />;
 }
 
-const Card = memo(function Card({ item, index, selected, active, onSelect, onDragStart, metaV }) {
-  void metaV;
-  const meta = item.type === 'photo' ? photoMeta.get(item.path) : null;
-  const low = meta && meta.w && Math.max(meta.w, meta.h) < LOW_RES_PX;
+const Card = memo(function Card({ item, index, selected, active, onSelect, onDragStart }) {
+  const meta = usePhotoMeta(item.type === 'photo' ? item.path : null);
+  const low = item.type === 'photo' && isLowRes(item);
+  const dims = low ? photoDims(item) : null;
   const bad = meta && (meta.missing || meta.error);
   return (
     <div
@@ -46,7 +69,7 @@ const Card = memo(function Card({ item, index, selected, active, onSelect, onDra
       title={item.name || item.title}
     >
       {item.type === 'photo' ? (
-        <Thumb path={item.path} rotate={Number(item.rotate) || 0} className="card-img" />
+        <Thumb path={item.path} rotate={Number(item.rotate) || 0} className="card-img" lazy needDims={!item.w} />
       ) : (
         <div className="card-chapter">
           <b>{item.title || '챕터'}</b>
@@ -54,7 +77,7 @@ const Card = memo(function Card({ item, index, selected, active, onSelect, onDra
         </div>
       )}
       <span className="card-idx">{index}</span>
-      {low && <span className="badge warn" title={`원본 ${meta.w}×${meta.h}px`}>저해상도</span>}
+      {low && <span className="badge warn" title={`원본 ${dims.w}×${dims.h}px`}>저해상도</span>}
       {bad && <span className="badge err">{meta.missing ? '파일 없음' : '열 수 없음'}</span>}
       {item.motion && item.motion !== 'auto' && <span className="card-flag" title="개별 카메라 움직임">◎</span>}
       {(item.label || item.caption) && <span className="card-cap">{[item.label, item.caption].filter(Boolean).join(' · ')}</span>}
@@ -62,8 +85,8 @@ const Card = memo(function Card({ item, index, selected, active, onSelect, onDra
   );
 });
 
-function TransitionChip({ seg, item, onPick, onPickAll, open, setOpen }) {
-  const resolved = seg?.transIn;
+const TransitionChip = memo(function TransitionChip({ resolved, itemId, transition, open, setOpen, onPick, onPickAll }) {
+  const item = { id: itemId, transition };
   const btnRef = useRef(null);
   const [pos, setPos] = useState(null);
   useEffect(() => {
@@ -74,7 +97,7 @@ function TransitionChip({ seg, item, onPick, onPickAll, open, setOpen }) {
   const isAuto = !item?.transition || item.transition === 'auto';
   return (
     <div className="tchip-wrap">
-      <button ref={btnRef} className={'tchip' + (isAuto ? '' : ' manual') + (open ? ' open' : '')} onMouseDown={(e) => e.stopPropagation()} onClick={() => setOpen(open ? null : item?.id || 'intro')} title="전환 효과 변경">
+      <button ref={btnRef} className={'tchip' + (isAuto ? '' : ' manual') + (open ? ' open' : '')} onMouseDown={(e) => e.stopPropagation()} onClick={() => setOpen(open ? null : itemId)} title="전환 효과 변경">
         <span className="tchip-dia" />
         <span className="tchip-name">{resolved ? TRANSITIONS[resolved]?.name : '—'}</span>
       </button>
@@ -84,12 +107,12 @@ function TransitionChip({ seg, item, onPick, onPickAll, open, setOpen }) {
             <span>누르면 바로 적용되고 미리보기로 재생됩니다</span>
           </div>
           <div className="tmenu-grid">
-            <button className={isAuto ? 'on' : ''} onClick={() => onPick('auto')}>
+            <button className={isAuto ? 'on' : ''} onClick={() => onPick(itemId, 'auto')}>
               <b>자동</b>
               <small>스타일에 맞게</small>
             </button>
             {Object.entries(TRANSITIONS).map(([id, t]) => (
-              <button key={id} className={!isAuto && item?.transition === id ? 'on' : ''} onClick={() => onPick(id)} title={t.desc}>
+              <button key={id} className={!isAuto && item.transition === id ? 'on' : ''} onClick={() => onPick(itemId, id)} title={t.desc}>
                 <b>{t.name}</b>
                 <small>{t.desc}</small>
               </button>
@@ -104,11 +127,22 @@ function TransitionChip({ seg, item, onPick, onPickAll, open, setOpen }) {
       )}
     </div>
   );
-}
+});
 
 export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorder, onSetTransition, onSetAllTransitions, onSelectSpecial, onDropFiles, onAddPhotos }) {
-  const metaV = useMetaVersion();
   const [dragId, setDragId] = useState(null);
+  // 카드·전환 칩 메모이제이션이 깨지지 않도록 안정적인 콜백 사용
+  const cb = useRef({});
+  cb.current = { onSetTransition, onSetAllTransitions, onSelect };
+  const pick = useCallback((id, t) => {
+    cb.current.onSetTransition(id, t);
+    setMenu(null);
+  }, []);
+  const pickAll = useCallback((t) => {
+    cb.current.onSetAllTransitions(t);
+    setMenu(null);
+  }, []);
+  const select = useCallback((id, e) => cb.current.onSelect(id, e), []);
   const [dropIdx, setDropIdx] = useState(null);
   const [menu, setMenu] = useState(null);
   const scrollRef = useRef(null);
@@ -127,11 +161,11 @@ export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorde
     el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   }, [selected]);
 
-  const onDragStart = (e, id) => {
+  const onDragStart = useCallback((e, id) => {
     setDragId(id);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/x-memoria', id);
-  };
+  }, []);
   const onDragOver = (e) => {
     const internal = e.dataTransfer.types.includes('text/x-memoria');
     const files = e.dataTransfer.types.includes('Files');
@@ -175,18 +209,13 @@ export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorde
           </div>
           {items.length > 0 && (
             <TransitionChip
-              seg={segByKey.get(items[0].id)}
-              item={{ id: '__intro', transition: project.intro.transition }}
+              resolved={segByKey.get(items[0].id)?.transIn}
+              itemId="__intro"
+              transition={project.intro.transition}
               open={menu === '__intro'}
               setOpen={setMenu}
-              onPick={(t) => {
-                onSetTransition('__intro', t);
-                setMenu(null);
-              }}
-              onPickAll={(t) => {
-                onSetAllTransitions(t);
-                setMenu(null);
-              }}
+              onPick={pick}
+              onPickAll={pickAll}
             />
           )}
         </>
@@ -199,22 +228,17 @@ export function Filmstrip({ project, tl, selected, activeKey, onSelect, onReorde
           <React.Fragment key={it.id}>
             {dropIdx === i && <div className="drop-marker" />}
             <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')} >
-              <Card item={it} index={it.type === 'photo' ? photoNo : '§'} selected={selected.has(it.id)} active={activeKey === it.id} onSelect={onSelect} onDragStart={onDragStart} metaV={metaV} />
+              <Card item={it} index={it.type === 'photo' ? photoNo : '§'} selected={selected.has(it.id)} active={activeKey === it.id} onSelect={select} onDragStart={onDragStart} />
             </div>
             {nextSeg && (
               <TransitionChip
-                seg={nextSeg}
-                item={it}
+                resolved={nextSeg.transIn}
+                itemId={it.id}
+                transition={it.transition}
                 open={menu === it.id}
                 setOpen={setMenu}
-                onPick={(t) => {
-                  onSetTransition(it.id, t);
-                  setMenu(null);
-                }}
-                onPickAll={(t) => {
-                  onSetAllTransitions(t);
-                  setMenu(null);
-                }}
+                onPick={pick}
+                onPickAll={pickAll}
               />
             )}
           </React.Fragment>

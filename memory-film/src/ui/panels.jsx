@@ -5,7 +5,7 @@ import {
   THEMES, TYPOGRAPHY, LOOKS, TRANSITION_STYLES, RESOLUTIONS, QUALITY, INTRO_STYLES, OUTRO_STYLES, ASPECTS, TEMPLATES,
   frameSize, outputSize, applyTemplate,
 } from '../engine/presets.js';
-import { fitPhotoDurationToLength } from '../engine/timeline.js';
+import { fitPhotoDurationToLength, minimumLength } from '../engine/timeline.js';
 import { fmtTime } from '../engine/math.js';
 import { setPath } from './store.js';
 import { sortPhotos, shufflePhotos, autoChapters, autoYearLabels, musicLength, checklist, estimateSizeMB } from './logic.js';
@@ -62,14 +62,6 @@ export function PhotosPanel({ project, update, tl, actions, toast }) {
   const photos = project.items.filter((i) => i.type === 'photo');
   const exifCount = photos.filter((p) => p.dateSource === 'exif').length;
   const chapters = project.items.filter((i) => i.type === 'chapter').length;
-  const fitTo = (sec) => {
-    const pd = fitPhotoDurationToLength(project, sec);
-    if (pd == null) return toast('사진을 먼저 추가해 주세요', 'warn');
-    if (pd < 2) return toast(`사진이 많아 1장당 ${pd.toFixed(1)}초가 됩니다. 더 긴 길이를 골라 주세요.`, 'warn');
-    if (pd > 12) return toast(`사진이 적어 1장당 ${pd.toFixed(1)}초가 됩니다. 더 짧은 길이를 골라 주세요.`, 'warn');
-    update((p) => setPath(p, 'style.photoDuration', pd));
-    toast(`전체 ${fmtTime(sec)}에 맞췄습니다 (사진 1장당 ${pd.toFixed(1)}초)`);
-  };
   return (
     <>
       <Section title="사진 불러오기" hint="폴더를 선택하면 안의 사진을 촬영일 순서로 가져옵니다. 사진·폴더를 창에 끌어다 놓아도 됩니다.">
@@ -101,6 +93,8 @@ export function PhotosPanel({ project, update, tl, actions, toast }) {
           </div>
         </div>
       </Section>
+
+      <LengthSection project={project} update={update} tl={tl} />
 
       <Section title="순서 정리" hint="정렬은 챕터 카드 사이 구간별로 적용되어 챕터 구성이 유지됩니다.">
         <div className="btn-row">
@@ -143,16 +137,6 @@ export function PhotosPanel({ project, update, tl, actions, toast }) {
       </Section>
 
       <Section title="사진 표시">
-        <Slider label="사진 1장당 시간" value={project.style.photoDuration} min={2} max={12} step={0.1} format={fmtSec} onChange={(v) => update((p) => setPath(p, 'style.photoDuration', v), 'pd')} />
-        <Field label="전체 길이 맞추기" hint="사진 1장당 시간을 자동 계산합니다">
-          <div className="chip-row">
-            {[60, 120, 180, 300, 600].map((s) => (
-              <button key={s} className="chip" disabled={!photos.length} onClick={() => fitTo(s)}>
-                {s / 60}분
-              </button>
-            ))}
-          </div>
-        </Field>
         <Field label="화면 맞춤">
           <Segmented value={project.style.fit} onChange={(v) => update((p) => setPath(p, 'style.fit', v))} options={[['auto', '자동'], ['cover', '꽉 채우기'], ['contain', '전체 보이기']]} />
         </Field>
@@ -160,6 +144,68 @@ export function PhotosPanel({ project, update, tl, actions, toast }) {
         <Toggle checked={project.style.photoFrame} onChange={(v) => update((p) => setPath(p, 'style.photoFrame', v))} label="인화지 테두리" desc="전체 보이기 사진에 흰 테두리 (옛날 사진 느낌)" />
       </Section>
     </>
+  );
+}
+
+// ---------------------------------------------------------------- 영상 길이
+function LengthSection({ project, update, tl }) {
+  const st = project.style;
+  const mode = st.lengthMode === 'total' ? 'total' : 'perPhoto';
+  const target = Number(st.targetDuration) || 180;
+  const photos = project.items.filter((i) => i.type === 'photo').length;
+  const mm = Math.floor(target / 60);
+  const ss = Math.round(target % 60);
+  const setTarget = (sec) => update((p) => ({ ...p, style: { ...p.style, lengthMode: 'total', targetDuration: Math.max(10, Math.min(3 * 3600, Math.round(sec))) } }), 'target');
+  const ml = musicLength(project.music);
+  const pd = tl.photoDuration || st.photoDuration;
+  const minLen = mode === 'total' && tl.fitShort ? minimumLength(project) : 0;
+  return (
+    <Section title="영상 길이">
+      <Segmented
+        value={mode}
+        onChange={(v) => update((p) => setPath(p, 'style.lengthMode', v))}
+        options={[['total', '전체 길이 정하기'], ['perPhoto', '사진 1장당 시간 정하기']]}
+      />
+      {mode === 'total' ? (
+        <>
+          <div className="time-input">
+            <input type="number" min={0} max={180} value={mm} onKeyDown={(e) => e.stopPropagation()} onChange={(e) => setTarget((Number(e.target.value) || 0) * 60 + ss)} />
+            <span>분</span>
+            <input type="number" min={0} max={59} value={ss} onKeyDown={(e) => e.stopPropagation()} onChange={(e) => setTarget(mm * 60 + Math.min(59, Number(e.target.value) || 0))} />
+            <span>초</span>
+          </div>
+          <div className="chip-row">
+            {[60, 120, 180, 300, 600, 900].map((s) => (
+              <button key={s} className={'chip' + (target === s ? ' on' : '')} onClick={() => setTarget(s)}>
+                {s / 60}분
+              </button>
+            ))}
+            {ml > 0 && (
+              <button className={'chip' + (Math.abs(target - ml) < 1 ? ' on' : '')} onClick={() => setTarget(ml)}>
+                ♪ 음악 길이 ({fmtTime(ml)})
+              </button>
+            )}
+          </div>
+          {photos > 0 && (
+            <div className={'len-result' + (tl.fitShort || pd < 1.5 ? ' warn' : '')}>
+              <b>사진 {photos}장 · 1장당 약 {pd.toFixed(1)}초</b>
+              <span>
+                {tl.fitShort
+                  ? `사진이 많아 가장 빠르게 해도 ${fmtTime(minLen)}입니다. 길이를 늘리거나 사진을 줄여 주세요.`
+                  : pd < 1.5
+                    ? '사진이 빠르게 지나갑니다. 감상용이라면 길이를 늘리는 것을 권장합니다.'
+                    : '사진을 더 넣거나 빼도 전체 길이는 그대로 유지됩니다.'}
+              </span>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <Slider label="사진 1장당 시간" value={st.photoDuration} min={1} max={12} step={0.1} format={fmtSec} onChange={(v) => update((p) => setPath(p, 'style.photoDuration', v), 'pd')} />
+          <p className="hint small">사진 {photos}장 → 전체 {fmtTime(tl.total)} (인트로·엔딩 포함)</p>
+        </>
+      )}
+    </Section>
   );
 }
 
@@ -402,10 +448,9 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
   const fit = () => {
     const pd = fitPhotoDurationToLength(project, ml);
     if (pd == null) return toast('사진이 없어 맞출 수 없습니다', 'warn');
-    if (pd < 2) return toast(`사진이 많아 1장당 ${pd.toFixed(1)}초가 됩니다. 곡을 추가하거나 사진을 줄여 주세요.`, 'warn');
-    if (pd > 12) return toast(`사진이 적어 1장당 ${pd.toFixed(1)}초가 됩니다. 짧은 곡을 사용해 보세요.`, 'warn');
-    update((p) => setPath(p, 'style.photoDuration', pd));
-    toast(`사진 1장당 ${pd.toFixed(2)}초로 맞췄습니다`);
+    update((p) => ({ ...p, style: { ...p.style, lengthMode: 'total', targetDuration: Math.round(ml * 10) / 10 } }));
+    if (pd <= 0.6) toast(`사진이 많아 음악보다 길어집니다. 곡을 추가하거나 사진을 줄여 주세요.`, 'warn');
+    else toast(`전체 길이를 음악(${fmtTime(ml)})에 맞췄습니다 · 사진 1장당 약 ${pd.toFixed(1)}초`);
   };
   const ratio = tl.total > 0 ? Math.min(1, ml / Math.max(ml, tl.total)) : 0;
   const vratio = tl.total > 0 ? Math.min(1, tl.total / Math.max(ml, tl.total)) : 0;
@@ -459,7 +504,7 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
           <Button icon="sparkle" variant="primary" onClick={fit}>
             음악 길이에 영상 맞추기
           </Button>
-          <p className="hint small">사진 1장당 시간을 자동 계산해 음악이 끝나는 순간 영상도 함께 끝나도록 합니다.</p>
+          <p className="hint small">전체 길이를 음악 길이로 고정합니다. 이후 사진을 더 넣어도 음악이 끝날 때 영상도 함께 끝납니다.</p>
           <Toggle checked={m.loop} onChange={set('loop')} label="음악 반복" desc="음악이 영상보다 짧으면 처음부터 다시 재생" />
         </Section>
       )}

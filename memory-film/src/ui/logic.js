@@ -6,6 +6,18 @@ import { fmtTime } from '../engine/math.js';
 
 export const LOW_RES_PX = 1500; // 장변 기준 이 미만이면 대형 스크린에서 흐려 보임
 
+/** 원본 해상도: 가져올 때 읽은 값 우선, 없으면 썸네일 생성 시 기록된 값 */
+export function photoDims(item) {
+  if (item.w && item.h) return { w: item.w, h: item.h };
+  const m = photoMeta.get(item.path);
+  return m && m.w ? { w: m.w, h: m.h } : null;
+}
+
+export function isLowRes(item) {
+  const d = photoDims(item);
+  return !!d && Math.max(d.w, d.h) < LOW_RES_PX;
+}
+
 /** 경로 목록(파일/폴더) → 사진 아이템 */
 export async function importPaths(paths, recursive = true) {
   if (!isDesktop) return { items: [], skipped: [] };
@@ -14,7 +26,7 @@ export async function importPaths(paths, recursive = true) {
 }
 
 function photoItemFromScan(p) {
-  return { id: newId('p'), type: 'photo', path: p.path, name: p.name, date: p.date, dateSource: p.dateSource, caption: '', label: '' };
+  return { id: newId('p'), type: 'photo', path: p.path, name: p.name, date: p.date, dateSource: p.dateSource, w: p.w || 0, h: p.h || 0, caption: '', label: '' };
 }
 
 /** 웹(테스트) 모드: File 객체 → blob URL 아이템 */
@@ -140,16 +152,14 @@ export function checklist(project, tl) {
   if (missing.length) out.push({ level: 'error', text: `찾을 수 없는 사진 ${missing.length}장 (파일이 이동/삭제됨)`, ids: missing.map((m) => m.id) });
   const broken = photos.filter((p) => photoMeta.get(p.path)?.error);
   if (broken.length) out.push({ level: 'error', text: `열 수 없는 사진 ${broken.length}장`, ids: broken.map((m) => m.id) });
-  const low = photos.filter((p) => {
-    const m = photoMeta.get(p.path);
-    return m && m.w && Math.max(m.w, m.h) < LOW_RES_PX;
-  });
+  const low = photos.filter((p) => isLowRes(p));
   if (low.length) out.push({ level: 'warn', text: `저해상도 사진 ${low.length}장 — 대형 스크린에서 흐릿할 수 있습니다`, ids: low.map((m) => m.id) });
   const ml = musicLength(project.music);
   if (!project.music.tracks.length) out.push({ level: 'info', text: '배경음악이 없습니다. 무음 영상으로 만들어집니다.' });
   else if (!project.music.loop && ml + 0.5 < tl.total) out.push({ level: 'warn', text: `음악(${fmtTime(ml)})이 영상(${fmtTime(tl.total)})보다 짧습니다. 끝부분이 무음이 됩니다.` });
   else if (ml > tl.total + 20) out.push({ level: 'info', text: `음악이 ${fmtTime(ml - tl.total)} 더 깁니다. 영상 끝에서 자연스럽게 페이드아웃됩니다.` });
-  if (project.style.photoDuration < 2.6 && photos.length) out.push({ level: 'warn', text: '사진 1장당 시간이 짧아 감상하기 어려울 수 있습니다 (3초 이상 권장).' });
+  if (tl.fitShort) out.push({ level: 'warn', text: `사진이 많아 정한 길이(${fmtTime(tl.target)})보다 ${fmtTime(tl.total)}로 길어집니다.` });
+  else if ((tl.photoDuration || project.style.photoDuration) < 1.5 && photos.length) out.push({ level: 'warn', text: '사진이 1.5초보다 빨리 넘어갑니다. 감상용이라면 전체 길이를 늘리는 것을 권장합니다.' });
   if (project.intro.enabled && !project.text.title.trim() && !project.text.number.trim()) out.push({ level: 'warn', text: '인트로 제목이 비어 있습니다.' });
   if (tl.total > 20 * 60) out.push({ level: 'info', text: '영상이 20분이 넘습니다. 행사용으로는 5~10분을 권장합니다.' });
   if (!out.some((o) => o.level !== 'info') && photos.length) out.unshift({ level: 'ok', text: '내보낼 준비가 되었습니다.' });

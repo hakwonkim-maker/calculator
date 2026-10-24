@@ -97,9 +97,24 @@ export function updateItem(project, id, patch) {
 // 사진 메타 정보(해상도, 누락 여부) — 프로젝트 히스토리와 분리된 캐시
 export const photoMeta = new Map();
 export const metaListeners = new Set();
+const pathListeners = new Map(); // 사진별 구독: 썸네일 하나가 로드될 때 그 카드만 다시 그림
 export function setPhotoMeta(path, patch) {
-  photoMeta.set(path, { ...(photoMeta.get(path) || {}), ...patch });
+  const prev = photoMeta.get(path) || {};
+  if (Object.keys(patch).every((k) => prev[k] === patch[k])) return;
+  photoMeta.set(path, { ...prev, ...patch });
+  pathListeners.get(path)?.forEach((fn) => fn());
   metaListeners.forEach((fn) => fn());
+}
+export function usePhotoMeta(path) {
+  const [, setV] = useState(0);
+  useEffect(() => {
+    if (!path) return undefined;
+    const fn = () => setV((x) => x + 1);
+    if (!pathListeners.has(path)) pathListeners.set(path, new Set());
+    pathListeners.get(path).add(fn);
+    return () => pathListeners.get(path)?.delete(fn);
+  }, [path]);
+  return path ? photoMeta.get(path) : null;
 }
 export function useMetaVersion() {
   const [v, setV] = useState(0);

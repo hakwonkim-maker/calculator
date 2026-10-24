@@ -286,6 +286,8 @@ export function defaultProject() {
       transitionStyle: 'elegant',
       transitionDuration: 1.3,
       photoDuration: 4.5,
+      lengthMode: 'perPhoto',
+      targetDuration: 180,
       motion: 'normal',
       fit: 'auto',
       look: 'warm',
@@ -413,7 +415,7 @@ export function applyTemplate(project, id) {
   const d = defaultProject();
   return {
     ...project,
-    name: project.items.length && project.name !== d.name ? project.name : t.name2,
+    name: project.items.length && project.name !== d.name && !Object.values(TEMPLATES).some((x) => x.name2 === project.name) ? project.name : t.name2,
     template: id,
     text: { ...d.text, credits: '', ...t.text, org: project.text.org, logo: project.text.logo },
     intro: { ...project.intro, enabled: true, transition: 'auto', ...t.intro },

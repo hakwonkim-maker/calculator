@@ -104,6 +104,19 @@ async function walk(dir, recursive, out, depth = 0) {
   }
 }
 
+let sizeOf = null;
+async function readSize(file) {
+  try {
+    sizeOf = sizeOf || require('image-size/fromFile').imageSizeFromFile;
+    const d = await sizeOf(file);
+    // EXIF 방향 5~8 = 90° 회전 → 가로세로 교환
+    const swap = (d.orientation || 0) >= 5;
+    return { w: (swap ? d.height : d.width) || 0, h: (swap ? d.width : d.height) || 0 };
+  } catch {
+    return { w: 0, h: 0 };
+  }
+}
+
 async function describeFiles(files) {
   const photos = [];
   const skipped = [];
@@ -120,8 +133,8 @@ async function describeFiles(files) {
       try {
         const st = await fs.promises.stat(f);
         if (st.size < 2048) continue;
-        const d = await readDate(f, st);
-        photos.push({ path: f, name: path.basename(f), size: st.size, ...d });
+        const [d, dim] = await Promise.all([readDate(f, st), readSize(f)]);
+        photos.push({ path: f, name: path.basename(f), size: st.size, ...d, ...dim });
       } catch {
         skipped.push({ path: f, reason: '읽기 실패' });
       }

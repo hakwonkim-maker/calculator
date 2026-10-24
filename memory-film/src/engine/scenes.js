@@ -521,7 +521,7 @@ function drawPhoto(ctx, seg, tau, env) {
     // 초점: 사용자가 지정한 중심점, 없으면 약간 위쪽(인물 얼굴이 주로 위쪽에 있음)
     const foc = it.focus;
     const fx = foc ? clamp((0.5 - foc.x) * 2, -1, 1) : m.fx * 0.35;
-    const fy = foc ? clamp((0.5 - foc.y) * 2, -1, 1) : -0.15 + m.fy * 0.25;
+    const fy = foc ? clamp((0.5 - foc.y) * 2, -1, 1) : 0.15 + m.fy * 0.25;
     const pr = foc ? 0.55 : 0.85;
     switch (m.type) {
       case 'zoomOut': z0 = 1.015 + Z; px0 = px1 = fx; py0 = py1 = fy; break;
@@ -540,8 +540,15 @@ function drawPhoto(ctx, seg, tau, env) {
     const s = Math.max(W / iw, H / ih) * z;
     const dw = iw * s;
     const dh = ih * s;
-    const x = (W - dw) / 2 + lerp(px0, px1, e) * ((dw - W) / 2);
-    const y = (H - dh) / 2 + lerp(py0, py1, e) * ((dh - H) / 2);
+    let px = lerp(px0, px1, e);
+    let py = lerp(py0, py1, e);
+    if (foc) {
+      // 지정한 중심점이 화면 안쪽(15~85%)에 항상 남도록 이동 범위를 제한
+      px = keepVisible(px, foc.x, W, dw);
+      py = keepVisible(py, foc.y, H, dh);
+    }
+    const x = (W - dw) / 2 + px * ((dw - W) / 2);
+    const y = (H - dh) / 2 + py * ((dh - H) / 2);
     ctx.drawImage(a.img, x, y, dw, dh);
   } else {
     // 블러 배경 + 그림자 있는 원본 비율 사진
@@ -607,6 +614,17 @@ function drawWatermark(ctx, env) {
     ctx.textBaseline = 'alphabetic';
   }
   ctx.restore();
+}
+
+/** 이동 계수 p(-1..1)를 중심점 f(0..1)가 화면 [15%, 85%] 안에 보이도록 제한 */
+function keepVisible(p, f, S, d) {
+  if (d - S < 1) return p;
+  const lo = (2 * 0.85 * S - S + d - 2 * f * d) / (d - S);
+  const hi = (2 * 0.15 * S - S + d - 2 * f * d) / (d - S);
+  // p가 클수록 이미지가 아래/오른쪽으로 내려가 f의 화면 위치가 커짐 → hi/lo 순서 주의
+  const a = Math.min(lo, hi);
+  const b = Math.max(lo, hi);
+  return clamp(clamp(p, a, b), -1, 1);
 }
 
 function drawCaption(ctx, seg, tau, env) {
@@ -1396,7 +1414,7 @@ function drawOutroCredits(ctx, seg, tau, env) {
           ctx.fillStyle = theme.accentSolid;
           drawTracked(ctx, l.a, cx, y + 54 * u, size * 0.2);
         } else if (l.t === 'pair') {
-          setFont(ctx, typo.body, 28 * u);
+          setFont(ctx, typo.body, fitFontSize(ctx, typo.body, l.a, 28 * u, W * 0.4 - 30 * u, 0.02));
           ctx.fillStyle = theme.textDim;
           drawTracked(ctx, l.a, cx - 22 * u, y + 38 * u, 1 * u, 'right');
           const size = fitFontSize(ctx, typo.title, l.b, 34 * u, W * 0.42, 0.02);
