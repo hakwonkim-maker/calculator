@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>render harness</title></head>
+<body style="margin:0;background:#111">
+<canvas id="c" style="width:960px"></canvas>
+<script type="module">
+import './fonts.css';
+import { Renderer } from './engine/renderer.js';
+import { normalizeProject } from './engine/presets.js';
+let r;
+window.setup = async (proj, w = 1920, h = 1080) => {
+  r?.dispose();
+  r = new Renderer({ canvas: document.getElementById('c'), width: w, height: h });
+  const tl = r.setProject(normalizeProject(proj));
+  await r.prepareFonts();
+  r.warmup();
+  return { total: tl.total, segs: tl.segments.map(s => ({ type: s.type, start: s.start, dur: s.dur, trans: s.transIn, tIn: s.tIn })) };
+};
+window.frame = async (t) => { await r.renderAt(t); return document.getElementById('c').toDataURL('image/jpeg', 0.9); };
+window.pixels = async (t) => { await r.renderAt(t); const b = r.readPixels(); return Array.from(b.subarray(0, 64)); };
+window.ready = true;
+</script></body></html>

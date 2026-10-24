@@ -1,0 +1,19 @@
+/* 오프라인 행사장에서도 동작하도록 모든 폰트를 앱에 내장 (SIL OFL 라이선스) */
+@import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
+@import '@fontsource/noto-serif-kr/400.css';
+@import '@fontsource/noto-serif-kr/500.css';
+@import '@fontsource/noto-serif-kr/600.css';
+@import '@fontsource/bodoni-moda/500.css';
+@import '@fontsource/bodoni-moda/600.css';
+@import '@fontsource/gilda-display/400.css';
+@import '@fontsource/cormorant-garamond/500.css';
+@import '@fontsource/cormorant-garamond/600.css';
+@import '@fontsource/cinzel/500.css';
+@import '@fontsource/cinzel/600.css';
+@import '@fontsource/nanum-myeongjo/400.css';
+@import '@fontsource/nanum-myeongjo/700.css';
+@import '@fontsource/nanum-myeongjo/800.css';
+@import '@fontsource/playfair-display/500.css';
+@import '@fontsource/playfair-display/600.css';
+@import '@fontsource/gowun-batang/400.css';
+@import '@fontsource/gowun-batang/700.css';
