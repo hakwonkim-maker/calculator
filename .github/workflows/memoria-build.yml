@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: memory-film/music-library
-          key: memoria-music-v3
+          key: memoria-music-v4
       - name: Fetch free music library (PD classical + CC BY)
         id: music
         run: node scripts/fetch-music.cjs
@@ -46,7 +46,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: memory-film/music-library
-          key: memoria-music-v3
+          key: memoria-music-v4
       - run: npm run dist:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

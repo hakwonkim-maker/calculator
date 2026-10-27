@@ -34,6 +34,8 @@ const CANDIDATES = {
     { k: 'Dreamer' },
     { c: 'Schubert Ave Maria', title: '슈베르트 – 아베 마리아' },
     { c: 'Massenet Méditation Thaïs', title: '마스네 – 타이스의 명상곡' },
+    { c: "Bach Jesu, Joy of Man's Desiring", title: '바흐 – 예수, 인류 소망의 기쁨' },
+    { c: 'Dvořák Humoresque', title: '드보르자크 – 유모레스크' },
     { k: 'Touching Moments Two - Higher' },
   ],
   calm: [
@@ -45,6 +47,8 @@ const CANDIDATES = {
     { k: 'Comfortable Mystery' },
     { c: 'Beethoven Für Elise', title: '베토벤 – 엘리제를 위하여' },
     { c: 'Liszt Liebestraum No. 3', title: '리스트 – 사랑의 꿈 3번' },
+    { c: 'Chopin Prelude Op. 28 No. 4', title: '쇼팽 – 전주곡 Op.28-4' },
+    { c: 'Debussy Rêverie', title: '드뷔시 – 꿈' },
   ],
   bright: [
     { k: 'Carefree' },
@@ -116,9 +120,11 @@ const strip = (h) => String(h || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' 
 async function findCommons(query, log) {
   const q = new URLSearchParams({
     action: 'query', format: 'json', generator: 'search', gsrnamespace: '6', gsrlimit: '12', gsrsearch: `${query} filetype:audio`,
-    prop: 'imageinfo', iiprop: 'url|size|mime|extmetadata', iiextmetadatafilter: 'LicenseShortName|Artist|ObjectName',
+    prop: 'imageinfo', iiprop: 'url|size|mime|extmetadata', iiextmetadatafilter: 'LicenseShortName|Artist|ObjectName|ImageDescription',
   });
   const j = await getJSON(`${COMMONS}?${q}`);
+  // 작곡가 이름(검색어 첫 단어)이 파일 이름·설명에 있어야 함 → 같은 제목의 다른 곡을 고르지 않게
+  const composer = query.split(/\s+/)[0].normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const pages = Object.values(j?.query?.pages || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
   for (const pg of pages) {
     const ii = pg.imageinfo?.[0];
@@ -127,6 +133,10 @@ async function findCommons(query, log) {
     const okLic = /public domain|^pd|cc0|cc-zero/i.test(lic) && !/\bby\b|cc-by|cc by/i.test(lic);
     const okMime = /^(audio\/(ogg|x-flac|flac|mpeg|wav|x-wav|webm)|application\/ogg|video\/webm)$/.test(ii.mime || '');
     if (!okLic || !okMime || ii.size < 800e3 || ii.size > 90e6) continue;
+    const text = `${pg.title} ${strip(ii.extmetadata?.ObjectName?.value)} ${strip(ii.extmetadata?.ImageDescription?.value)}`.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    // 반주 트랙·파트 녹음·발췌·벨소리 등은 제외
+    if (/backing|bass(es)? only|\bbasses\b|\bstems?\b|karaoke|minus one|accompaniment|click track|ringtone|excerpt|sample|preview|\bmidi\b|synth/i.test(pg.title)) continue;
+    if (!text.includes(composer)) continue;
     return { url: ii.url, license: lic, credit: strip(ii.extmetadata?.Artist?.value).slice(0, 80), file: pg.title };
   }
   log(`  Commons '${query}': 조건에 맞는 퍼블릭 도메인 녹음 없음 (${pages.length}개 검색됨)`);
