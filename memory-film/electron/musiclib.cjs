@@ -75,26 +75,45 @@ function spread(arr, n) {
 
 /** FreePD에서 분위기별 곡 목록(최대 30곡)을 만든다. log: 진행 메시지 콜백 */
 async function fetchCatalog(log = () => {}) {
-  let pages = [];
+  // 홈페이지의 링크에서 카테고리 페이지를 찾는다 (사이트 주소 체계가 바뀌어도 동작하도록 키워드로 판단)
+  const keys = [...new Set(MOODS.flatMap((m) => m.keys))];
+  const byPage = {};
+  const pages = new Map(); // key → url
+  let home = '';
   try {
-    const home = await getText(SITE);
-    pages = [...new Set([...home.matchAll(/href=["']\/?([a-z0-9_-]+\.php)["']/gi)].map((m) => m[1].toLowerCase()))];
+    home = await getText(SITE);
+    const links = [...home.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)].map((m) => {
+      let url = '';
+      try {
+        url = new URL(m[1].replace(/&amp;/g, '&'), SITE).href;
+      } catch {}
+      return { url, text: m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase() };
+    });
+    const same = links.filter((l) => l.url.startsWith(new URL(SITE).origin) && !/\.mp3($|\?)/i.test(l.url));
+    log(`홈페이지 링크 ${same.length}개: ` + same.slice(0, 40).map((l) => `${l.text || '-'}→${l.url.replace(new URL(SITE).origin, '')}`).join(' | '));
+    for (const k of keys) {
+      const hit = same.find((l) => l.url.toLowerCase().includes(k)) || same.find((l) => l.text === k || l.text.startsWith(k));
+      if (hit) pages.set(k, hit.url);
+    }
+    // 홈페이지에 바로 mp3가 있으면 '기타'로 사용
+    const homeMp3 = extractMp3(home, SITE);
+    if (homeMp3.length) {
+      byPage.misc = homeMp3;
+      log(`홈페이지: ${homeMp3.length}곡 발견`);
+    }
   } catch (e) {
     log('홈페이지 읽기 실패: ' + e.message);
   }
-  if (!pages.length) pages = FALLBACK_PAGES;
-  const byPage = {};
-  for (const pg of pages) {
-    const key = pg.replace(/\.php$/, '');
-    if (!MOODS.some((m) => m.keys.includes(key))) continue;
+  if (!pages.size && !Object.keys(byPage).length) for (const pg of FALLBACK_PAGES) pages.set(pg.replace(/\.php$/, ''), new URL(pg, SITE).href);
+  for (const [key, url] of pages) {
     try {
-      const url = new URL(pg, SITE).href;
       byPage[key] = extractMp3(await getText(url), url);
-      log(`${key}: ${byPage[key].length}곡 발견`);
+      log(`${key}: ${byPage[key].length}곡 발견 (${url})`);
     } catch (e) {
       log(`${key} 읽기 실패: ${e.message}`);
     }
   }
+  if (!Object.values(byPage).some((v) => v.length)) log('곡을 찾지 못했습니다. 홈페이지 앞부분: ' + home.replace(/\s+/g, ' ').slice(0, 1500));
   // 분위기마다 필요한 곡 수의 2배를 후보로: 앞쪽(고르게 뽑은 want곡)이 본 목록, 나머지는 받기 실패 시 대체곡
   const used = new Set();
   const list = [];

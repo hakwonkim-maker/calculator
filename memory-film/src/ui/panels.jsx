@@ -259,11 +259,16 @@ function LengthSection({ project, update, tl, actions }) {
             <div className="len-result warn">
               <b>영상이 {Math.round(tl.total / 60)}분으로 깁니다</b>
               <span>
-                ‘전체 길이 정하기’에서 원하는 길이를 고르면 좋은 사진만 자동으로 골라 줍니다.{' '}
-                <button className="link" onClick={() => update((p) => ({ ...p, style: { ...p.style, lengthMode: 'total', targetDuration: 180 } }))}>
-                  3분으로 정하기
-                </button>
+                좋은 사진만 자동으로 골라 원하는 길이로 맞출 수 있습니다 (빠진 사진은 지워지지 않음).
               </span>
+              <div className="btn-row">
+                <Button icon="sparkle" size="sm" variant="primary" onClick={() => actions.autoSelect(180, 3)}>
+                  3분 영상으로 좋은 사진만 고르기
+                </Button>
+                <Button size="sm" variant="soft" onClick={() => update((p) => ({ ...p, style: { ...p.style, lengthMode: 'total', targetDuration: 180 } }))}>
+                  길이 직접 정하기
+                </Button>
+              </div>
             </div>
           )}
         </>

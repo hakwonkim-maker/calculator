@@ -6,6 +6,8 @@ const fs = require('fs');
 const os = require('os');
 const lib = require('../electron/musiclib.cjs');
 
+// GitHub Actions: 받은 곡 수를 다음 단계(캐시 저장 여부)에 알려 줌
+const report = (n) => process.env.GITHUB_OUTPUT && fs.appendFileSync(process.env.GITHUB_OUTPUT, `count=${n}\n`);
 const out = path.resolve(process.argv[2] || path.join(__dirname, '..', 'music-library'));
 
 (async () => {
@@ -13,6 +15,7 @@ const out = path.resolve(process.argv[2] || path.join(__dirname, '..', 'music-li
   const have = lib.readManifest(out);
   if (have.length >= 30 && have.every((t) => fs.existsSync(path.join(out, t.file)))) {
     console.log(`[music] 이미 ${have.length}곡 준비됨`);
+    report(have.length);
     return;
   }
   let ffmpeg = null;
@@ -55,6 +58,7 @@ const out = path.resolve(process.argv[2] || path.join(__dirname, '..', 'music-li
   }
   fs.rmSync(tmpDir, { recursive: true, force: true });
   lib.writeManifest(out, tracks);
+  report(tracks.length);
   const total = fs.readdirSync(out).reduce((s, f) => s + fs.statSync(path.join(out, f)).size, 0);
   console.log(`[music] 완료: ${tracks.length}곡, ${(total / 1e6).toFixed(1)}MB → ${out}`);
 })().catch((e) => {
