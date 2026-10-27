@@ -335,6 +335,8 @@ export function defaultProject() {
       seed: 1,
       montage: 'normal',
       folderLabel: 'off',
+      beatSync: true, // 음악 박자에 장면 전환 맞추기
+      enhance: 'old', // 옛 사진 자동 보정: off | old(옛 사진만) | all
     },
     music: { tracks: [], volume: 0.9, fadeIn: 1.5, fadeOut: 5, crossfade: 3, loop: true },
     output: { aspect: '16:9', resolution: '1080p', fps: 30, quality: 'high', encoder: 'auto', path: '' },

@@ -5,6 +5,7 @@ import { Thumb } from './Filmstrip.jsx';
 import { TRANSITIONS } from '../engine/transitions.js';
 import { CHAPTER_DEFAULT_DURATION } from '../engine/timeline.js';
 import { MOTION_OPTIONS, MONTAGE_STYLES } from '../engine/presets.js';
+import { enhancePolicy } from '../engine/enhance.js';
 import { photoMeta, updateItem, useMetaVersion } from './store.js';
 import { isLowRes, photoDims, checklist } from './logic.js';
 import { fmtTime } from '../engine/math.js';
@@ -25,6 +26,10 @@ function TransitionSelect({ value, onChange }) {
 
 export function Inspector({ project, update, tl, selected, actions, onSelectIds }) {
   useMetaVersion();
+  const [enhInfo, setEnhInfo] = React.useState(null);
+  const [showOriginal, setShowOriginal] = React.useState(false);
+  const selKey = [...selected].join('|');
+  React.useEffect(() => setEnhInfo(null), [selKey, project.style.enhance]);
   const ids = [...selected];
   const T = project.style.transitionDuration;
 
@@ -124,9 +129,10 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
   const date = item.date ? new Date(item.date) : null;
   const grp = tl.byItem?.get(item.id);
   const inGroup = grp?.type === 'group' ? grp : null;
+  const enh = enhancePolicy(item, project.style.enhance);
   return (
     <div className="inspector">
-      <FocusPicker item={item} meta={meta} rot={rot} onPick={(f) => update((p) => updateItem(p, item.id, { focus: f }))} />
+      <FocusPicker item={item} meta={meta} rot={rot} enh={showOriginal ? null : enh} onInfo={setEnhInfo} onPick={(f) => update((p) => updateItem(p, item.id, { focus: f }))} />
       <div className="insp-tools">
         <Button icon="undo" size="sm" variant="soft" onClick={() => rotate(-90)} title="왼쪽으로 90° 회전">
           회전
@@ -175,6 +181,36 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
           desc={inGroup ? `지금 ‘${MONTAGE_STYLES[inGroup.style]?.name}’ 몽타주에서 다른 사진 ${inGroup.items.length - 1}장과 함께 나옵니다` : '끄면 이 사진은 항상 한 장씩 크게 나옵니다'}
         />
       </div>
+      <Section title="사진 보정 (옛 사진 복원)">
+        <Segmented
+          value={item.enhance || 'auto'}
+          onChange={(v) => update((p) => updateItem(p, item.id, { enhance: v === 'auto' ? undefined : v }))}
+          options={[['auto', '자동'], ['on', '보정하기'], ['off', '원본 그대로']]}
+          size="sm"
+        />
+        <p className="hint small">
+          {!enh
+            ? '보정하지 않고 원본 그대로 씁니다.'
+            : enhInfo?.applied === 'restore'
+              ? '색 바램·누런 변색·흐린 대비를 복원했습니다.'
+              : enhInfo?.applied === 'gentle'
+                ? '밝기와 대비를 살짝 다듬었습니다.'
+                : enhInfo
+                  ? '보정이 필요 없는 사진이라 원본 그대로 씁니다. (강제로 하려면 ‘보정하기’)'
+                  : '확인 중…'}
+        </p>
+        {enh && enhInfo?.applied && (
+          <button
+            type="button"
+            className="btn btn-soft btn-sm compare-btn"
+            onMouseDown={() => setShowOriginal(true)}
+            onMouseUp={() => setShowOriginal(false)}
+            onMouseLeave={() => setShowOriginal(false)}
+          >
+            {showOriginal ? '원본 보는 중…' : '누르고 있으면 보정 전 원본'}
+          </button>
+        )}
+      </Section>
       <Section title="자막" hint={inGroup ? '자막을 넣으면 이 사진은 몽타주에서 빠져 한 장으로 크게 나옵니다.' : null}>
         <Field label="연도 · 라벨" hint="금색 큰 글씨로 표시 (예: 1998, 창립)">
           <TextInput value={item.label} onChange={set('label')} placeholder="1998" maxLength={20} />
@@ -228,7 +264,7 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
 }
 
 /** 사진을 클릭해 화면 중심점(초점) 지정 — 꽉 채우기 화면에서 잘리지 않을 부분 */
-function FocusPicker({ item, meta, rot, onPick }) {
+function FocusPicker({ item, meta, rot, onPick, enh, onInfo }) {
   const swap = rot === 90 || rot === 270;
   const ar = meta.w ? (swap ? meta.h / meta.w : meta.w / meta.h) : 1.5;
   const onClick = (e) => {
@@ -238,7 +274,7 @@ function FocusPicker({ item, meta, rot, onPick }) {
   return (
     <div className="insp-thumb" title="사진에서 꼭 보여야 할 곳(얼굴 등)을 클릭하세요">
       <div className="focus-box" style={{ aspectRatio: ar, width: `min(100%, ${Math.round(220 * ar)}px)` }} onClick={onClick}>
-        <Thumb path={item.path} rotate={rot} className="insp-img" />
+        <Thumb path={item.path} rotate={rot} className="insp-img" enh={enh} onInfo={(r) => enh && onInfo?.(r)} />
         {item.focus && <span className="focus-dot" style={{ left: `${item.focus.x * 100}%`, top: `${item.focus.y * 100}%` }} />}
       </div>
       <span className="focus-hint">{item.focus ? '중심점 지정됨' : '클릭해서 중심점 지정'}</span>

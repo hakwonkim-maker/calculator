@@ -4,6 +4,7 @@
 
 import { TRANSITION_STYLES, MOTION_LEVELS, MONTAGE_STYLES, MONTAGE_FREQ, introTiming } from './presets.js';
 import { hashStr, rng, weightedPick } from './math.js';
+import { beatsOnTimeline } from './beats.js';
 
 const INTRO_EXIT = { golden: 'lightLeak', mosaic: 'zoomBlur', light: 'dipWhite', cinematic: 'dipBlack', polaroid: 'blurDissolve', bloom: 'dipWhite', minimal: 'fade', filmleader: 'filmBurn', timeroll: 'dipWhite', flashcut: 'zoomBlur' };
 const MONTAGE_ORDER = ['grid', 'polaroid', 'split', 'filmstrip'];
@@ -134,7 +135,7 @@ export function buildTimeline(project) {
   const target = Number(st.targetDuration) || 0;
   if (st.lengthMode !== 'total' || !nAuto || target <= 0) {
     const pd = Math.max(MIN_PHOTO_DURATION, Number(st.photoDuration) || 4.5);
-    return { ...buildCore(project, pd, effectiveT(T, pd)), photoDuration: pd };
+    return syncToBeats({ ...buildCore(project, pd, effectiveT(T, pd)), photoDuration: pd }, project, 0);
   }
   // 전체 길이 고정: 총 길이(pd)는 거의 선형이므로 할선법으로 2~4회 만에 수렴
   const total = (pd) => buildCore(project, pd, effectiveT(T, pd)).total;
@@ -148,7 +149,51 @@ export function buildTimeline(project) {
   }
   pd = Math.min(60, Math.max(MIN_PHOTO_DURATION, pd));
   const tl = buildCore(project, pd, effectiveT(T, pd));
-  return { ...tl, photoDuration: pd, target, fitShort: tl.total > target + 0.5 };
+  return syncToBeats({ ...tl, photoDuration: pd, target, fitShort: tl.total > target + 0.5 }, project, tl.total);
+}
+
+/**
+ * 음악 박자에 장면 전환 맞추기: 각 전환의 한가운데(새 사진이 반쯤 보이는 순간)를 가까운 박자로 옮긴다.
+ * - 전환마다 원래 위치 근처(±약 1박)에서 '센 박자'(마디 첫 박 등)를 우선 선택 → 오차가 쌓이지 않음
+ * - 장면이 너무 짧아지거나 인트로 글자가 잘리지 않게 최소 길이 보장
+ * - keepTotal(전체 길이 고정 모드)이면 마지막 장면 길이로 전체 길이를 원래대로 맞춤
+ */
+function syncToBeats(tl, project, keepTotal) {
+  if (project.style.beatSync === false) return tl;
+  const segs = tl.segments;
+  if (segs.length < 3) return tl;
+  const beats = beatsOnTimeline(project.music, tl.total);
+  if (beats.length < 8) return tl;
+  const bi = (beats[beats.length - 1].t - beats[0].t) / (beats.length - 1);
+  const orig = segs.map((s) => s.start);
+  let synced = 0;
+  let j = 0;
+  for (let i = 1; i < segs.length; i++) {
+    const a = segs[i - 1];
+    const b = segs[i];
+    const cut = orig[i] + b.tIn / 2;
+    const win = Math.max(0.15, Math.min(bi * 1.05, Math.min(a.dur, b.dur) * 0.3));
+    while (j < beats.length && beats[j].t < cut - win) j++;
+    let best = null;
+    let bestScore = -1;
+    for (let k = j; k < beats.length && beats[k].t <= cut + win; k++) {
+      const sc = (0.2 + beats[k].s) * (1 - (0.45 * Math.abs(beats[k].t - cut)) / win);
+      if (sc > bestScore) {
+        bestScore = sc;
+        best = beats[k].t;
+      }
+    }
+    let ns = (best == null ? cut : best) - b.tIn / 2;
+    const minDur = a.type === 'intro' ? a.dur - 0.5 : a.tIn + a.tOut + (a.type === 'photo' ? 0.6 : 0.9);
+    const low = a.start + minDur - a.tOut;
+    if (ns < low) ns = low;
+    else if (best != null) synced++;
+    a.dur = ns - a.start + a.tOut;
+    b.start = ns;
+  }
+  const last = segs[segs.length - 1];
+  if (keepTotal) last.dur = Math.max(last.tIn + 1, keepTotal - last.start);
+  return { ...tl, total: last.start + last.dur, beatSynced: synced, beatInterval: bi };
 }
 
 function buildCore(project, photoDuration, T) {

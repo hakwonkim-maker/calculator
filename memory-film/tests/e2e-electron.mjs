@@ -18,7 +18,7 @@ await app.evaluate(({ dialog }, { fixtures, outFile, musicDir }) => {
     const props = opts?.properties || _w?.properties || [];
     const title = opts?.title || '';
     if (props.includes('openDirectory')) return { canceled: false, filePaths: [fixtures] };
-    if (title.includes('음악')) return { canceled: false, filePaths: [musicDir + '/music_a.mp3', musicDir + '/music_b.mp3'] };
+    if (title.includes('음악')) return { canceled: false, filePaths: [musicDir + '/music_beat.mp3', musicDir + '/music_a.mp3'] };
     return { canceled: true, filePaths: [] };
   };
   dialog.showSaveDialog = async () => ({ canceled: false, filePath: outFile });
@@ -26,7 +26,7 @@ await app.evaluate(({ dialog }, { fixtures, outFile, musicDir }) => {
 const win = await app.firstWindow();
 const errors = [];
 win.on('pageerror', (e) => errors.push(e.message));
-win.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+win.on('console', (m) => m.type() === 'error' && errors.push(m.text() + (m.location()?.url ? ' @ ' + m.location().url.slice(0, 160) : '')));
 await win.waitForSelector('.tpl-modal');
 await win.click(big ? '.tpl-grid .pcard:has-text("창립")' : '.tpl-grid .pcard:has-text("행사 하이라이트")');
 await win.waitForSelector('.empty-card');
@@ -83,6 +83,9 @@ await win.waitForSelector(process.env.MF_COMMONS_API ? '.track >> nth=2' : '.tra
 await win.waitForTimeout(800);
 if (!big) await win.click('button:has-text("음악 길이에 영상 맞추기")');
 await win.waitForTimeout(500);
+await win.waitForFunction(() => !document.querySelector('.track-list')?.textContent.includes('박자 분석 중'), null, { timeout: 30000 }).catch(() => {});
+console.log('tracks:', (await win.textContent('.track-list')).replace(/\s+/g, ' ').slice(0, 200));
+console.log('beat sync:', (await win.textContent('.panel')).match(/장면 전환 \d+곳[^.]*|박자를 찾지[^.]*|박자 분석 중/)?.[0]);
 await win.screenshot({ path: path.join(root, 'out', 'e2e_music.png') });
 // 내보내기
 await win.click('.step:has-text("내보내기")');

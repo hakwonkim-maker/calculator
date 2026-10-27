@@ -339,6 +339,23 @@ export default function App() {
     return false;
   };
 
+  // ------------------------------------------------ 음악 박자 분석 (곡을 넣거나 프로젝트를 열면 자동)
+  const beatJobs = useRef(new Set());
+  useEffect(() => {
+    for (const t of project.music.tracks) {
+      if (t.beats || t.beatsFailed || beatJobs.current.has(t.path)) continue;
+      beatJobs.current.add(t.path);
+      audio
+        .analyzeBeats(t.path)
+        .then((r) => ({ beats: r.beats, beatStrength: r.strength, bpm: r.bpm, beatConf: r.confidence }))
+        .catch(() => ({ beatsFailed: true }))
+        .then((patch) => {
+          beatJobs.current.delete(t.path);
+          store.patch((p) => ({ ...p, music: { ...p.music, tracks: p.music.tracks.map((x) => (x.path === t.path && !x.beats ? { ...x, ...patch } : x)) } }));
+        });
+    }
+  }, [project.music.tracks, audio, store.patch]);
+
   // ------------------------------------------------ 자동 사진 선별
   const autoSelect = async (target, per) => {
     const need = projectRef.current.items.filter((i) => i.type === 'photo' && typeof i.q !== 'number');

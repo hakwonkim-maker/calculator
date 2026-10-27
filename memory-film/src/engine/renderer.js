@@ -3,7 +3,7 @@
 // 미리보기와 내보내기가 같은 코드를 쓰므로 결과가 동일하다.
 
 import { Compositor } from './compositor.js';
-import { AssetManager, itemKey } from './assets.js';
+import { AssetManager, itemKey, setEnhanceStyle } from './assets.js';
 import { buildTimeline, activeAt } from './timeline.js';
 import { drawSegment, lookAmountFor, captionAccent } from './scenes.js';
 import { montageNeeds } from './montage.js';
@@ -63,6 +63,7 @@ export class Renderer {
 
   setProject(project) {
     this.project = project;
+    setEnhanceStyle(project.style?.enhance);
     this.assets.setHints(project.items);
     this.tl = buildTimeline(project);
     const theme = THEMES[project.style.theme] || THEMES.noir;
@@ -108,7 +109,7 @@ export class Renderer {
     const thumbs = [];
     if (!seg) return { full, thumbs };
     const logo = this.project.text.logo;
-    const gallery = () => thumbs.push(...this.tl.gallery.map(itemKey));
+    const gallery = () => thumbs.push(...this.tl.gallery.map((it) => itemKey(it)));
     if (seg.type === 'group') {
       const n = montageNeeds(seg);
       full.push(...n.full);
@@ -121,7 +122,7 @@ export class Renderer {
       if (logo) thumbs.push(logo);
       const st = this.project.intro.style;
       if (seg.type === 'intro' && (st === 'mosaic' || st === 'polaroid' || st === 'timeroll')) gallery();
-      if (seg.type === 'intro' && st === 'flashcut') full.push(...this.tl.gallery.slice(0, 10).map(itemKey));
+      if (seg.type === 'intro' && st === 'flashcut') full.push(...this.tl.gallery.slice(0, 10).map((it) => itemKey(it)));
       if (seg.type === 'intro' && st === 'cinematic' && this.tl.gallery[0]) full.push(itemKey(this.tl.gallery[0]));
       if (seg.type === 'outro' && this.project.outro.style === 'gallery') gallery();
     }

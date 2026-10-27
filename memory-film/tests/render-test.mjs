@@ -46,6 +46,8 @@ const scenarios = {
   montage: { intro: { style: 'golden', duration: 10 }, style: { theme: 'noir', typography: 'classic', montage: 'many', folderLabel: 'all' }, transitionStyle: 'elegant' },
   credit: { intro: { style: 'golden', duration: 10 }, style: { theme: 'noir', typography: 'classic' }, music: { tracks: [{ path: 'x.m4a', duration: 120, needsCredit: true, credit: '"Carefree" Kevin MacLeod (incompetech.com) · Licensed under CC BY 4.0' }, { path: 'y.m4a', duration: 90, needsCredit: true, credit: '"Pamgaea" Kevin MacLeod (incompetech.com) · Licensed under CC BY 4.0' }] } },
   creditNoOutro: { intro: { style: 'golden', duration: 10 }, outro: { enabled: false }, style: { theme: 'ivory', typography: 'warm' }, music: { tracks: [{ path: 'x.m4a', duration: 120, needsCredit: true, credit: '"Carefree" Kevin MacLeod (incompetech.com) · Licensed under CC BY 4.0' }] } },
+  restoreOff: { intro: { enabled: false }, outro: { enabled: false }, style: { theme: 'noir', typography: 'classic', enhance: 'off', motion: 'none', montage: 'off', look: 'natural', vignette: 0, grain: 0 } },
+  restoreOn: { intro: { enabled: false }, outro: { enabled: false }, style: { theme: 'noir', typography: 'classic', enhance: 'old', motion: 'none', montage: 'off', look: 'natural', vignette: 0, grain: 0 } },
   square: { intro: { style: 'mosaic', duration: 10 }, style: { theme: 'navy', typography: 'modern' }, w: 1080, h: 1080 },
 };
 const sc = scenarios[scenario];

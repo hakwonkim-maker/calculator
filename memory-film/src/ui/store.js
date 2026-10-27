@@ -58,6 +58,15 @@ export function useProjectStore() {
     setState({ project: normalizeProject(project), filePath, past: [], future: [], dirty: false, restored: false });
   }, []);
 
+  /** 실행 취소 기록 없이 바꾸기 (박자 분석처럼 자동으로 채워지는 정보). 이전 기록에도 같은 변경을 반영 */
+  const patch = useCallback((fn) => {
+    setState((s) => {
+      const next = fn(s.project);
+      if (!next || next === s.project) return s;
+      return { ...s, project: next, past: s.past.map(fn), future: s.future.map(fn) };
+    });
+  }, []);
+
   const markSaved = useCallback((filePath) => setState((s) => ({ ...s, filePath, dirty: false })), []);
   const clearRestored = useCallback(() => setState((s) => ({ ...s, restored: false })), []);
 
@@ -74,7 +83,7 @@ export function useProjectStore() {
     return () => clearTimeout(id);
   }, [state.project, state.filePath]);
 
-  return { ...state, update, undo, redo, replace, markSaved, clearRestored };
+  return { ...state, update, patch, undo, redo, replace, markSaved, clearRestored };
 }
 
 // ---------- 불변 업데이트 헬퍼 ----------

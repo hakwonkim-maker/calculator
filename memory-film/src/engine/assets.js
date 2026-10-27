@@ -3,16 +3,44 @@
 // 출력 해상도 × 여유배율 크기로만 보관한다.
 
 import { mediaUrl } from '../platform.js';
+import { toneStats, makeCurves, applyCurves, decide, enhancePolicy } from './enhance.js';
 
-/** 사진 아이템 → 캐시 키 (회전 값 포함) */
-export function itemKey(it) {
+// 옛 사진 자동 보정 설정 (프로젝트 스타일) — 렌더러가 프로젝트를 받을 때 설정
+let enhanceStyle = 'old';
+export function setEnhanceStyle(mode) {
+  enhanceStyle = mode || 'old';
+}
+
+/** 사진 아이템 → 캐시 키 (회전 + 보정 정책 포함). tag를 주면 그 정책을 그대로 사용 */
+export function itemKey(it, tag) {
   const r = ((Number(it?.rotate) || 0) % 360 + 360) % 360;
-  return r ? `${it.path}#r${r}` : it?.path;
+  // tag는 문자열 또는 null만 인정 (Array.map 콜백으로 넘겨져 인덱스가 들어오는 실수 방지)
+  const e = typeof tag === 'string' || tag === null ? tag : enhancePolicy(it, enhanceStyle);
+  let k = it?.path;
+  if (r) k += `#r${r}`;
+  if (e) k += `#e${e}`;
+  return k;
 }
 
 function splitKey(key) {
-  const m = /^(.*)#r(90|180|270)$/.exec(key);
-  return m ? { path: m[1], rot: Number(m[2]) } : { path: key, rot: 0 };
+  const m = /^(.*?)(?:#r(90|180|270))?(?:#e([AB1]))?$/s.exec(key);
+  return { path: m[1], rot: Number(m[2] || 0), enh: m[3] || null };
+}
+
+/** 비트맵을 w×h 캔버스로 그리고, 정책에 따라 옛 사진 보정. 반환 { canvas, applied } */
+function enhanceTo(bmp, policy, w, h) {
+  const c = new OffscreenCanvas(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(bmp, 0, 0, w, h);
+  const id = g.getImageData(0, 0, w, h);
+  const st = toneStats(id.data, Math.max(1, Math.round((w * h) / 60000)));
+  const mode = decide(st, policy);
+  if (mode) {
+    applyCurves(id.data, makeCurves(st, mode));
+    g.putImageData(id, 0, 0);
+  }
+  return { canvas: c, applied: mode };
 }
 
 /** EXIF 방향이 반영된 비트맵을 추가로 회전 */
@@ -149,7 +177,16 @@ export class AssetManager {
     const scale = Math.min(1, cover);
     const tw = Math.max(1, Math.round(iw * scale));
     const th = Math.max(1, Math.round(ih * scale));
-    const img = scale < 1 ? await createImageBitmap(full, { resizeWidth: tw, resizeHeight: th, resizeQuality: 'high' }) : full;
+    const { enh } = splitKey(key);
+    let src = full;
+    let img;
+    let applied = null;
+    if (enh) {
+      const r = enhanceTo(full, enh, tw, th);
+      applied = r.applied;
+      src = r.canvas;
+      img = await createImageBitmap(r.canvas);
+    } else img = scale < 1 ? await createImageBitmap(full, { resizeWidth: tw, resizeHeight: th, resizeQuality: 'high' }) : full;
 
     // 블러 배경: 작은 캔버스에서 블러 → 크게 늘려 그려도 매끈함
     const bw = 360;
@@ -158,11 +195,11 @@ export class AssetManager {
     const g = c.getContext('2d');
     const s = Math.max(bw / iw, bh / ih) * 1.15;
     g.filter = 'blur(14px) saturate(1.15)';
-    g.drawImage(full, (bw - iw * s) / 2, (bh - ih * s) / 2, iw * s, ih * s);
+    g.drawImage(src, (bw - iw * s) / 2, (bh - ih * s) / 2, iw * s, ih * s);
     g.filter = 'none';
     const bg = await createImageBitmap(c);
     if (img !== full) full.close();
-    return { img, bg, w: tw, h: th, srcW: iw, srcH: ih };
+    return { img, bg, w: tw, h: th, srcW: iw, srcH: ih, enhanced: applied };
   }
 
   async _decodeThumb(key) {
@@ -170,7 +207,8 @@ export class AssetManager {
     const s = Math.min(1, this.thumbSize / Math.max(full.width, full.height));
     const tw = Math.max(1, Math.round(full.width * s));
     const th = Math.max(1, Math.round(full.height * s));
-    const img = await createImageBitmap(full, { resizeWidth: tw, resizeHeight: th, resizeQuality: 'high' });
+    const { enh } = splitKey(key);
+    const img = enh ? await createImageBitmap(enhanceTo(full, enh, tw, th).canvas) : await createImageBitmap(full, { resizeWidth: tw, resizeHeight: th, resizeQuality: 'high' });
     full.close();
     return { img, w: tw, h: th };
   }
@@ -191,8 +229,8 @@ const thumbQueue = [];
 let thumbActive = 0;
 const thumbUrlCache = new Map();
 
-export function uiThumb(path, size = 240, rotate = 0, needDims = true) {
-  const ak = itemKey({ path, rotate });
+export function uiThumb(path, size = 240, rotate = 0, needDims = true, enh = null) {
+  const ak = itemKey({ path, rotate }, enh);
   const key = ak + '|' + size;
   if (thumbUrlCache.has(key)) return thumbUrlCache.get(key);
   const p = new Promise((resolve) => {
@@ -202,12 +240,17 @@ export function uiThumb(path, size = 240, rotate = 0, needDims = true) {
         const s = Math.min(1, size / Math.min(full.width, full.height));
         const w = Math.round(full.width * s);
         const h = Math.round(full.height * s);
-        const c = new OffscreenCanvas(w, h);
-        c.getContext('2d').drawImage(full, 0, 0, w, h);
+        let c;
+        let applied = null;
+        if (enh) ({ canvas: c, applied } = enhanceTo(full, enh, w, h));
+        else {
+          c = new OffscreenCanvas(w, h);
+          c.getContext('2d').drawImage(full, 0, 0, w, h);
+        }
         const info = { w: full.width, h: full.height };
         full.close();
         const out = await c.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
-        resolve({ url: URL.createObjectURL(out), ...info });
+        resolve({ url: URL.createObjectURL(out), applied, ...info });
       } catch (e) {
         resolve({ url: null, error: String(e), w: 0, h: 0 });
       }

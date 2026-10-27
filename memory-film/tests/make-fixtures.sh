@@ -11,4 +11,6 @@ $F -f lavfi -i "testsrc2=s=2400x2400" -frames:v 1 -q:v 3 p05_square.jpg
 $F -f lavfi -i "mandelbrot=s=3000x4000:start_scale=0.5:end_pts=1:inner=period" -frames:v 1 -q:v 3 p06_3x4.jpg
 $F -f lavfi -i "sine=frequency=261.6:duration=14" -f lavfi -i "sine=frequency=329.6:duration=14" -filter_complex "amix=inputs=2,volume=0.6" music_a.mp3
 $F -f lavfi -i "sine=frequency=392:duration=12" music_b.mp3
+# 박자 맞춤 테스트용: 100 BPM 킥 + 지속음 30초
+$F -f lavfi -i "aevalsrc='0.8*sin(2*PI*60*t)*exp(-mod(t-0.2\\,0.6)*25)+0.15*sin(2*PI*330*t)':d=30:s=44100" -b:a 160k music_beat.mp3
 echo "fixtures ready"

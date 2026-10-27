@@ -1,6 +1,7 @@
 // 미리보기용 배경음악 재생 (Web Audio)
 // 최종 출력(FFmpeg)과 같은 규칙: 곡 사이 크로스페이드, 반복, 전체 페이드인/아웃
 import { mediaUrl } from '../platform.js';
+import { detectBeats } from './beats.js';
 
 export class AudioPreview {
   constructor() {
@@ -23,6 +24,45 @@ export class AudioPreview {
     const buf = await this._ctx().decodeAudioData(await res.arrayBuffer());
     this.buffers.set(path, buf);
     return buf.duration;
+  }
+
+  /** 박자 분석: 디코딩된 음악을 모노로 섞어 워커에 보냄. 반환 { bpm, confidence, beats, strength } */
+  async analyzeBeats(path) {
+    await this.load(path);
+    const buf = this.buffers.get(path);
+    const n = buf.length;
+    const pcm = new Float32Array(n);
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < n; i++) pcm[i] += d[i] / buf.numberOfChannels;
+    }
+    const inline = () => detectBeats(pcm, buf.sampleRate); // 워커를 못 쓰는 환경이면 화면 스레드에서 (약 0.5초)
+    if (this.noWorker) return inline();
+    try {
+      if (!this.worker) {
+        this.worker = new Worker(new URL('./beatWorker.js', import.meta.url), { type: 'module' });
+        this.jobs = new Map();
+        this.worker.onmessage = (e) => {
+          const j = this.jobs.get(e.data.id);
+          this.jobs.delete(e.data.id);
+          if (j) e.data.ok ? j.resolve(e.data) : j.reject(new Error(e.data.error));
+        };
+        this.worker.onerror = () => {
+          this.noWorker = true;
+          for (const j of this.jobs.values()) j.fallback();
+          this.jobs.clear();
+        };
+      }
+    } catch {
+      this.noWorker = true;
+      return inline();
+    }
+    const id = Math.random();
+    const copy = pcm.slice(); // 워커 실패 시 다시 쓰도록 원본 보관
+    return new Promise((resolve, reject) => {
+      this.jobs.set(id, { resolve, reject, fallback: () => resolve(inline()) });
+      this.worker.postMessage({ id, pcm: copy, sr: buf.sampleRate }, [copy.buffer]);
+    });
   }
 
   /** 영상 시간 fromT 부터 재생. 반환: 재생 기준 AudioContext 시각 */

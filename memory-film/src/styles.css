@@ -465,3 +465,5 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
 .lic { font-size: 10px; padding: 0 5px; border-radius: 4px; }
 .lic.pd { background: #7fbf8e22; color: #9fd3ab; }
 .lic.by { background: #d9b86722; color: var(--gold); }
+.card-restored { position: absolute; right: 6px; top: 6px; font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 5px; background: #c9a86a; color: #241a05; }
+.compare-btn { align-self: flex-start; user-select: none; }

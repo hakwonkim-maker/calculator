@@ -7,6 +7,7 @@ import {
 } from '../engine/presets.js';
 import { fitPhotoDurationToLength, minimumLength } from '../engine/timeline.js';
 import { planSelection } from '../engine/select.js';
+import { BEAT_CLEAR } from '../engine/beats.js';
 import { fmtTime } from '../engine/math.js';
 import { setPath } from './store.js';
 import { sortPhotos, shufflePhotos, autoChapters, autoYearLabels, musicLength, checklist, estimateSizeMB, hasKnownYear } from './logic.js';
@@ -574,6 +575,23 @@ export function StylePanel({ project, update, actions }) {
         )}
       </Section>
 
+      <Section title="옛 사진 자동 보정" hint="누렇게 변한 인화 사진, 바랜 색, 흐릿한 대비를 자동으로 되살립니다. 원본 파일은 바뀌지 않습니다.">
+        <Segmented
+          value={st.enhance || 'old'}
+          onChange={set('enhance')}
+          size="sm"
+          options={[['off', '끄기'], ['old', '옛 사진만 (권장)'], ['all', '모든 사진 다듬기']]}
+        />
+        <p className="hint small">
+          {(st.enhance || 'old') === 'old'
+            ? '바래거나 색이 틀어진 사진만 골라 복원합니다. 필름스트립에 ‘보정’ 표시가 붙습니다.'
+            : st.enhance === 'all'
+              ? '옛 사진은 복원하고, 나머지 사진도 밝기·대비를 살짝 정리합니다.'
+              : '모든 사진을 원본 그대로 씁니다.'}{' '}
+          사진별로는 오른쪽 속성 창의 ‘사진 보정’에서 바꿀 수 있습니다.
+        </p>
+      </Section>
+
       <Section title="사진 색감">
         <div className="chip-row">
           {Object.entries(LOOKS).map(([id, l]) => (
@@ -765,6 +783,7 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
                 <b>{t.name || baseName(t.path)}</b>
                 <small>
                   {t.duration ? fmtTime(t.duration) : '분석 중…'}
+                  {t.bpm ? (t.beatConf >= BEAT_CLEAR ? ` · ${Math.round(t.bpm)} BPM` : ' · 박자 약한 곡') : t.beatsFailed ? '' : ' · 박자 분석 중…'}
                   {t.needsCredit && <span title={t.credit}> · CC BY — 영상 끝에 출처 자동 표시</span>}
                 </small>
               </div>
@@ -808,6 +827,26 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
           <Toggle checked={m.loop} onChange={set('loop')} label="음악 반복" desc="음악이 영상보다 짧으면 처음부터 다시 재생" />
         </Section>
       )}
+
+      <Section title="음악 박자에 맞추기">
+        <Toggle
+          checked={project.style.beatSync !== false}
+          onChange={(v) => update((p) => setPath(p, 'style.beatSync', v))}
+          label="사진이 박자에 맞춰 바뀌기"
+          desc="장면 전환이 음악의 박자(마디 첫 박 우선)에 맞춰져 리듬감 있는 영상이 됩니다"
+        />
+        {project.style.beatSync !== false && (
+          <p className="hint small">
+            {!m.tracks.length
+              ? '음악을 넣으면 박자를 자동으로 분석해 맞춥니다.'
+              : m.tracks.some((t) => !t.beats && !t.beatsFailed)
+                ? '박자 분석 중…'
+                : tl.beatSynced
+                  ? `장면 전환 ${tl.beatSynced}곳을 박자에 맞췄습니다${m.tracks.every((t) => (t.beatConf || 0) < BEAT_CLEAR) ? ' (박자가 약한 곡이라 효과가 은은합니다)' : ''}.`
+                  : '박자를 찾지 못해 원래 간격대로 바뀝니다.'}
+          </p>
+        )}
+      </Section>
 
       <Section title="소리">
         <Slider label="음량" value={m.volume} min={0} max={1.5} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={set('volume', true)} />

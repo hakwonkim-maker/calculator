@@ -9,7 +9,7 @@ import { itemKey } from './assets.js';
 
 /** 몽타주에 필요한 에셋: 크게 보이는 스타일은 원본, 작게 보이는 스타일은 썸네일 */
 export function montageNeeds(seg) {
-  const keys = seg.items.map(itemKey);
+  const keys = seg.items.map((it) => itemKey(it));
   return seg.style === 'grid' || seg.style === 'split' ? { full: keys, thumbs: [] } : { full: [], thumbs: keys };
 }
 

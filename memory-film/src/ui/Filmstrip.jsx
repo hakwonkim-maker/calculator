@@ -6,6 +6,7 @@ import { setPhotoMeta, usePhotoMeta } from './store.js';
 import { isLowRes, photoDims } from './logic.js';
 import { Icon } from './controls.jsx';
 import { MONTAGE_STYLES } from '../engine/presets.js';
+import { enhancePolicy } from '../engine/enhance.js';
 
 /** 화면에 보일 때만 썸네일을 만든다 (사진 수백 장도 가볍게) */
 function useInView(ref, enabled) {
@@ -27,15 +28,16 @@ function useInView(ref, enabled) {
   return seen;
 }
 
-export function Thumb({ path, className, rotate = 0, lazy = false, needDims = true }) {
+export function Thumb({ path, className, rotate = 0, lazy = false, needDims = true, enh = null, onInfo }) {
   const [src, setSrc] = useState(null);
   const boxRef = useRef(null);
   const visible = useInView(boxRef, lazy);
   useEffect(() => {
     if (!visible) return undefined;
     let alive = true;
-    uiThumb(path, 240, rotate, needDims).then((r) => {
+    uiThumb(path, 240, rotate, needDims, enh).then((r) => {
       if (!alive) return;
+      onInfo?.(r);
       if (r.url) {
         setSrc(r.url);
         // 메타 정보는 원본 기준 (회전 전)
@@ -46,12 +48,13 @@ export function Thumb({ path, className, rotate = 0, lazy = false, needDims = tr
     return () => {
       alive = false;
     };
-  }, [path, rotate, visible]);
+  }, [path, rotate, visible, enh]);
   return src ? <img className={className} src={src} alt="" draggable={false} /> : <div ref={boxRef} className={className + ' thumb-loading'} />;
 }
 
-const Card = memo(function Card({ item, index, selected, active, onSelect, onDragStart, montage }) {
+const Card = memo(function Card({ item, index, selected, active, onSelect, onDragStart, montage, enh }) {
   const meta = usePhotoMeta(item.type === 'photo' ? item.path : null);
+  const [restored, setRestored] = useState(false);
   const low = item.type === 'photo' && isLowRes(item);
   const dims = low ? photoDims(item) : null;
   const bad = meta && (meta.missing || meta.error);
@@ -70,7 +73,7 @@ const Card = memo(function Card({ item, index, selected, active, onSelect, onDra
       title={item.name || item.title}
     >
       {item.type === 'photo' ? (
-        <Thumb path={item.path} rotate={Number(item.rotate) || 0} className="card-img" lazy needDims={!item.w} />
+        <Thumb path={item.path} rotate={Number(item.rotate) || 0} className="card-img" lazy needDims={!item.w} enh={enh} onInfo={(r) => setRestored(r.applied === 'restore')} />
       ) : (
         <div className="card-chapter">
           <b>{item.title || '챕터'}</b>
@@ -82,6 +85,7 @@ const Card = memo(function Card({ item, index, selected, active, onSelect, onDra
       {item.skip && !bad && <span className="badge skip" title="자동 선별에서 빠진 사진 (속성 창에서 다시 넣기)">제외</span>}
       {bad && <span className="badge err">{meta.missing ? '파일 없음' : '열 수 없음'}</span>}
       {item.motion && item.motion !== 'auto' && <span className="card-flag" title="개별 카메라 움직임">◎</span>}
+      {restored && enh && !item.skip && <span className="card-restored" title="옛 사진 자동 보정 적용됨 (색 바램·대비 복원)">보정</span>}
       {item.star && <span className="card-star" title="대표 사진 (인트로·엔딩에 먼저 사용)">★</span>}
       {montage && <span className="card-montage" title={`몽타주 장면(${montage})에 함께 나옵니다`}>{montage}</span>}
       {(item.label || item.caption) && <span className="card-cap">{[item.label, item.caption].filter(Boolean).join(' · ')}</span>}
@@ -239,7 +243,7 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
             <React.Fragment key={it.id}>
               {dropIdx === i && <div className="drop-marker" />}
               <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')}>
-                <Card item={it} index={'–'} selected={selected.has(it.id)} active={false} onSelect={select} onDragStart={onDragStart} />
+                <Card item={it} index={'–'} selected={selected.has(it.id)} active={false} onSelect={select} onDragStart={onDragStart} enh={enhancePolicy(it, project.style.enhance)} />
               </div>
             </React.Fragment>
           );
@@ -255,7 +259,7 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
           <React.Fragment key={it.id}>
             {dropIdx === i && <div className="drop-marker" />}
             <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')} >
-              <Card item={it} index={it.type === 'photo' ? photoNo : '§'} selected={selected.has(it.id)} active={activeKey === it.id || (grp && activeKey === grp.key)} onSelect={select} onDragStart={onDragStart} montage={grp ? MONTAGE_STYLES[grp.style]?.name : null} />
+              <Card item={it} index={it.type === 'photo' ? photoNo : '§'} selected={selected.has(it.id)} active={activeKey === it.id || (grp && activeKey === grp.key)} onSelect={select} onDragStart={onDragStart} montage={grp ? MONTAGE_STYLES[grp.style]?.name : null} enh={it.type === 'photo' ? enhancePolicy(it, project.style.enhance) : null} />
             </div>
             {sameGroup && <div className="montage-link" title="몽타주로 한 화면에 함께 나오는 사진" />}
             {nextSeg && (
