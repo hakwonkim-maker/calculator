@@ -1,4 +1,4 @@
-// 설치 파일 빌드 전에 무료(CC0) 음악 30곡을 받아 music-library/ 에 준비한다.
+// 설치 파일 빌드 전에 무료 음악 30곡(퍼블릭 도메인 클래식 + CC BY)을 받아 music-library/ 에 준비한다.
 // 네트워크 문제로 실패해도 빌드는 계속된다 (프로그램 안에서 다시 받을 수 있음).
 // 사용법: node scripts/fetch-music.cjs [출력폴더]
 const path = require('path');
@@ -34,9 +34,10 @@ const out = path.resolve(process.argv[2] || path.join(__dirname, '..', 'music-li
   const wantOf = Object.fromEntries(lib.MOODS.map((m) => [m.id, m.want]));
   for (const t of catalog) {
     if ((got[t.mood] || 0) >= wantOf[t.mood]) continue; // 이 분위기는 이미 다 받음 → 대체곡 건너뜀
-    const mp3 = path.join(tmpDir, t.id + '.mp3');
+    const mp3 = path.join(tmpDir, t.id + '.src');
     try {
-      const size = await lib.downloadTo(t.url, mp3);
+      const src = await lib.downloadTrack(t, mp3);
+      const size = fs.statSync(mp3).size;
       let file = t.id + '.mp3';
       let duration = 0;
       if (ffmpeg) {
@@ -50,7 +51,13 @@ const out = path.resolve(process.argv[2] || path.join(__dirname, '..', 'music-li
         }
       } else fs.copyFileSync(mp3, path.join(out, file));
       got[t.mood] = (got[t.mood] || 0) + 1;
-      tracks.push({ id: t.id, title: t.title, mood: t.mood, file, duration: Math.round(duration * 10) / 10, url: t.url, license: t.license });
+      if (duration && (duration < 45 || duration > 900)) {
+        console.log(`[music] ✗ ${t.title}: 길이 ${Math.round(duration)}초 — 영상 배경음악으로 부적합해 제외`);
+        fs.rmSync(path.join(out, file), { force: true });
+        got[t.mood]--;
+        continue;
+      }
+      tracks.push({ id: t.id, title: t.title, mood: t.mood, file, duration: Math.round(duration * 10) / 10, url: src.url, license: src.license, credit: src.credit || t.credit, needsCredit: !!t.needsCredit });
       console.log(`[music] ✓ ${t.mood.padEnd(6)} ${t.title} (${(size / 1e6).toFixed(1)}MB, ${Math.round(duration)}s)`);
     } catch (e) {
       console.log('[music] ✗', t.title, e.message);

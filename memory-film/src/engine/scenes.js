@@ -41,6 +41,44 @@ export function drawSegment(ctx, seg, tau, env) {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, env.W, env.H);
   }
+  if (seg.isLast) drawMusicCredit(ctx, seg, tau, env);
+  ctx.restore();
+}
+
+/**
+ * CC BY 음악을 쓴 경우 영상 마지막 장면 아래에 출처를 작게 표시 (라이선스 조건: 곡명·작곡가·출처·라이선스)
+ * 엔딩이 있으면 엔딩 내내, 엔딩을 끈 경우 마지막 장면의 끝 6초 동안
+ */
+function drawMusicCredit(ctx, seg, tau, env) {
+  const { W, H, u, theme, typo } = env;
+  const lines = [...new Set((env.project.music?.tracks || []).filter((t) => t.needsCredit && t.credit).map((t) => t.credit))];
+  if (!lines.length) return;
+  const from = seg.type === 'outro' ? 0.8 : Math.max(0, seg.dur - 6);
+  const a = Math.min(prog(tau, from, from + 0.8), 1 - prog(tau, seg.dur - 0.6, seg.dur));
+  if (a <= 0.001) return;
+  const size = Math.max(11, 19 * u);
+  const shown = lines.slice(0, 4);
+  const light = seg.type === 'outro' && !theme.dark;
+  ctx.save();
+  ctx.globalAlpha = a * 0.92;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  setFont(ctx, typo.body, size, 500);
+  ctx.shadowColor = light ? 'transparent' : 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 8 * u;
+  ctx.fillStyle = light ? 'rgba(40,32,24,0.85)' : 'rgba(250,246,238,0.9)';
+  const lh = size * 1.45;
+  const y0 = H - 34 * u - (shown.length - 1) * lh;
+  shown.forEach((l, i) => {
+    const text = (i === 0 ? 'Music: ' : '') + l + (i === shown.length - 1 && lines.length > shown.length ? ` 외 ${lines.length - shown.length}곡` : '');
+    let fs = size;
+    while (fs > 9 && ctx.measureText(text).width > W * 0.94) {
+      fs -= 1;
+      setFont(ctx, typo.body, fs, 500);
+    }
+    ctx.fillText(text, W / 2, y0 + i * lh);
+    setFont(ctx, typo.body, size, 500);
+  });
   ctx.restore();
 }
 

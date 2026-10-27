@@ -70,7 +70,7 @@ await win.fill('.inspector input >> nth=1', '창립 기념식');
 await win.click('.step:has-text("음악")');
 // 무료 음악 라이브러리 (MF_MUSIC_SITE 가 있으면 온라인 받기까지 검증)
 await win.waitForSelector('.lib');
-if (process.env.MF_MUSIC_SITE) {
+if (process.env.MF_COMMONS_API) {
   await win.click('.lib button:has-text("인터넷에서 무료 음악")');
   await win.waitForSelector('.lib-row', { timeout: 30000 });
   console.log('library rows:', await win.$$eval('.lib-row', (e) => e.length));
@@ -79,7 +79,7 @@ if (process.env.MF_MUSIC_SITE) {
   console.log('library track added:', (await win.textContent('.track-list')).replace(/\s+/g, ' ').slice(0, 80));
 }
 await win.click('button:has-text("음악 파일 추가")');
-await win.waitForSelector(process.env.MF_MUSIC_SITE ? '.track >> nth=2' : '.track >> nth=1', { timeout: 20000 });
+await win.waitForSelector(process.env.MF_COMMONS_API ? '.track >> nth=2' : '.track >> nth=1', { timeout: 20000 });
 await win.waitForTimeout(800);
 if (!big) await win.click('button:has-text("음악 길이에 영상 맞추기")');
 await win.waitForTimeout(500);

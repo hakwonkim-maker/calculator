@@ -244,6 +244,7 @@ function buildCore(project, photoDuration, T) {
   });
   const last = raw[raw.length - 1];
   const total = last ? last.start + last.dur : 0;
+  if (last) last.isLast = true; // 마지막 장면: 음악 출처(CC BY) 표기 위치
 
   // 인트로/아웃트로 갤러리용 사진: ★대표 사진을 먼저, 부족하면 전체에서 고르게 채움 (최대 30장)
   const photos = project.items.filter((it) => it.type === 'photo');

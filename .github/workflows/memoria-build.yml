@@ -31,14 +31,14 @@ jobs:
           cache: npm
           cache-dependency-path: memory-film/package-lock.json
       - run: npm ci
-      # 무료(CC0) 음악 30곡 — 다 받은 경우에만 캐시에 보관해 다음 빌드부터 다시 받지 않음
+      # 무료 음악 30곡(퍼블릭 도메인 클래식 + CC BY) — 다 받은 경우에만 캐시에 보관해 다음 빌드부터 다시 받지 않음
       - name: Restore music library cache
         id: music-cache
         uses: actions/cache/restore@v4
         with:
           path: memory-film/music-library
-          key: memoria-music-v2
-      - name: Fetch free music library (CC0, FreePD)
+          key: memoria-music-v3
+      - name: Fetch free music library (PD classical + CC BY)
         id: music
         run: node scripts/fetch-music.cjs
       - name: Save music library cache
@@ -46,7 +46,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: memory-film/music-library
-          key: memoria-music-v2
+          key: memoria-music-v3
       - run: npm run dist:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

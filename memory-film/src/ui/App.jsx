@@ -195,7 +195,7 @@ export default function App() {
         });
       },
       openTemplates: () => setShowTemplates(true),
-      addLibraryTrack: (t) => addTrack(t.path, t.title, { libId: t.id }),
+      addLibraryTrack: (t) => addTrack(t.path, t.title, { libId: t.id, license: t.license, ...(t.needsCredit ? { needsCredit: true, credit: t.credit } : {}) }),
       autoSelect: (target, per) => autoSelectRef.current?.(target, per),
       clearSelection: () => {
         update((p) => clearSelection(p));

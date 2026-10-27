@@ -43,7 +43,7 @@ if (idx >= 0) {
 }
 await win.click('.step:has-text("음악")');
 await win.waitForTimeout(600);
-if (process.env.MF_MUSIC_SITE) {
+if (process.env.MF_COMMONS_API) {
   await win.click('.lib button:has-text("인터넷에서 무료 음악")');
   await win.waitForSelector('.lib-row', { timeout: 30000 });
   await win.click('.lib-row >> nth=2 >> .lib-play');

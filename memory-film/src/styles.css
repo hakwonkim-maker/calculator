@@ -462,3 +462,6 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
 .busy-modal { width: 420px; align-items: stretch; }
 .busy-bar { height: 6px; border-radius: 3px; background: var(--bg); overflow: hidden; }
 .busy-bar i { display: block; height: 100%; background: var(--gold); transition: width 0.2s; }
+.lic { font-size: 10px; padding: 0 5px; border-radius: 4px; }
+.lic.pd { background: #7fbf8e22; color: #9fd3ab; }
+.lic.by { background: #d9b86722; color: var(--gold); }

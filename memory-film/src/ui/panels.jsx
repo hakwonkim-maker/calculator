@@ -590,7 +590,7 @@ export function StylePanel({ project, update, actions }) {
 }
 
 // ---------------------------------------------------------------- 4. 음악
-/** 무료 음악 라이브러리: 분위기별 CC0 곡 미리듣기 · 한 번 클릭으로 추가 */
+/** 무료 음악 라이브러리: 분위기별 미리듣기 · 한 번 클릭으로 추가 (퍼블릭 도메인 클래식 + CC BY) */
 let libAudio = null;
 function MusicLibrary({ project, actions, toast }) {
   const [lib, setLib] = useState(null);
@@ -696,6 +696,10 @@ function MusicLibrary({ project, actions, toast }) {
                 {moodName[t.mood]}
                 {t.duration ? ' · ' + fmtTime(t.duration) : ''}
                 {!t.local ? ' · 받기 필요' : ''}
+                {' · '}
+                <span className={t.needsCredit ? 'lic by' : 'lic pd'} title={t.needsCredit ? t.credit : t.credit || '퍼블릭 도메인'}>
+                  {t.needsCredit ? 'CC BY' : '퍼블릭 도메인'}
+                </span>
               </small>
             </div>
             {used.has(t.id) ? (
@@ -716,7 +720,7 @@ function MusicLibrary({ project, actions, toast }) {
         </Button>
       )}
       <p className="hint small">
-        모든 곡은 <b>CC0(퍼블릭 도메인)</b> 음원(FreePD.com)이라 행사 상영·유튜브·SNS에 출처 표기 없이 쓸 수 있습니다. 영상보다 짧으면 자동으로 반복됩니다.
+        <b>퍼블릭 도메인</b> 곡(클래식 연주)은 출처 표기 없이 쓸 수 있고, <b>CC BY</b> 곡(Kevin MacLeod)은 영상 끝에 출처 한 줄(곡명·작곡가·라이선스)이 <b>자동으로</b> 들어갑니다. 모두 행사 상영·유튜브·SNS에 무료로 쓸 수 있으며, 영상보다 짧으면 자동으로 반복됩니다.
       </p>
     </div>
   );
@@ -759,7 +763,10 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
               <Icon name="music" size={16} />
               <div className="track-name">
                 <b>{t.name || baseName(t.path)}</b>
-                <small>{t.duration ? fmtTime(t.duration) : '분석 중…'}</small>
+                <small>
+                  {t.duration ? fmtTime(t.duration) : '분석 중…'}
+                  {t.needsCredit && <span title={t.credit}> · CC BY — 영상 끝에 출처 자동 표시</span>}
+                </small>
               </div>
               <button className="icon-btn" onClick={() => moveTrack(i, -1)} disabled={i === 0} title="위로">
                 ▲

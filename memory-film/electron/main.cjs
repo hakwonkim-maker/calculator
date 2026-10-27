@@ -299,8 +299,8 @@ ipcMain.handle('music:download', (_e, id) => {
     if (!t) throw new Error('곡 정보를 찾을 수 없습니다');
     const dir = userMusicDir();
     fs.mkdirSync(dir, { recursive: true });
-    const mp3 = path.join(dir, t.id + '.download.mp3');
-    await musiclib.downloadTo(t.url, mp3);
+    const mp3 = path.join(dir, t.id + '.download');
+    const src = await musiclib.downloadTrack(t, mp3);
     let file = t.id + '.m4a';
     let duration = 0;
     try {
@@ -310,7 +310,7 @@ ipcMain.handle('music:download', (_e, id) => {
       file = t.id + '.mp3';
       fs.renameSync(mp3, path.join(dir, file));
     }
-    const entry = { id: t.id, title: t.title, mood: t.mood, file, duration: Math.round(duration * 10) / 10, url: t.url, license: t.license };
+    const entry = { id: t.id, title: t.title, mood: t.mood, file, duration: Math.round(duration * 10) / 10, url: src.url, license: src.license, credit: src.credit || t.credit, needsCredit: !!t.needsCredit };
     const list = musiclib.readManifest(dir).filter((x) => x.id !== id);
     musiclib.writeManifest(dir, [...list, entry]);
     return { ...entry, path: path.join(dir, file), local: true };
