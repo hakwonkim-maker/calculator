@@ -6,6 +6,7 @@ import { Compositor } from './compositor.js';
 import { AssetManager, itemKey } from './assets.js';
 import { buildTimeline, activeAt } from './timeline.js';
 import { drawSegment, lookAmountFor, captionAccent } from './scenes.js';
+import { montageNeeds } from './montage.js';
 import { THEMES, TYPOGRAPHY, LOOKS } from './presets.js';
 import { TRANSITIONS } from './transitions.js';
 import { ensureFonts } from './fonts.js';
@@ -45,7 +46,7 @@ export class Renderer {
     canvas.height = height;
     this.canvas = canvas;
     this.compositor = new Compositor(canvas);
-    this.assets = new AssetManager({ width, height, capacity: assetCapacity || 14 });
+    this.assets = new AssetManager({ width, height, capacity: Math.max(16, assetCapacity || 16) });
     const mk = () => {
       const c = new OffscreenCanvas(width, height);
       return [c, c.getContext('2d', { alpha: false })];
@@ -80,7 +81,7 @@ export class Renderer {
       layerCtx: this.layerCtx,
       numLayer: this.numLayer,
       numLayerCtx: this.numLayerCtx,
-      cache: this.cache || (this.cache = new LRU(40)),
+      cache: this.cache || (this.cache = new LRU(96)),
       darkAccent: ca.accent,
       darkAccentSolid: ca.solid,
     };
@@ -108,13 +109,19 @@ export class Renderer {
     if (!seg) return { full, thumbs };
     const logo = this.project.text.logo;
     const gallery = () => thumbs.push(...this.tl.gallery.map(itemKey));
+    if (seg.type === 'group') {
+      const n = montageNeeds(seg);
+      full.push(...n.full);
+      thumbs.push(...n.thumbs);
+    }
     if (seg.type === 'photo') full.push(itemKey(seg.item));
     else if (seg.type === 'chapter' && seg.nextPhoto) full.push(itemKey(seg.nextPhoto));
     if ((seg.type === 'photo' || seg.type === 'chapter') && logo && this.project.style.watermark) thumbs.push(logo);
     if (seg.type === 'intro' || seg.type === 'outro') {
       if (logo) thumbs.push(logo);
       const st = this.project.intro.style;
-      if (seg.type === 'intro' && (st === 'mosaic' || st === 'polaroid')) gallery();
+      if (seg.type === 'intro' && (st === 'mosaic' || st === 'polaroid' || st === 'timeroll')) gallery();
+      if (seg.type === 'intro' && st === 'flashcut') full.push(...this.tl.gallery.slice(0, 10).map(itemKey));
       if (seg.type === 'intro' && st === 'cinematic' && this.tl.gallery[0]) full.push(itemKey(this.tl.gallery[0]));
       if (seg.type === 'outro' && this.project.outro.style === 'gallery') gallery();
     }

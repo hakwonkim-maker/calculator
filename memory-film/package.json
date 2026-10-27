@@ -1,6 +1,6 @@
 {
   "name": "memoria-film-studio",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "사진 폴더로 고품질 기념 영상을 만드는 PC용 프로그램",
   "main": "electron/main.cjs",
   "scripts": {
@@ -8,12 +8,14 @@
     "build": "vite build --config vite.config.js",
     "start": "npm run build && electron .",
     "electron:dev": "electron . --dev",
-    "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "dist:win": "node scripts/fetch-music.cjs && npm run build && electron-builder --win nsis --x64 --publish never",
     "dist:mac": "npm run build && electron-builder --mac dmg --publish never",
     "test:render": "node tests/render-test.mjs",
     "fixtures": "bash tests/make-fixtures.sh",
     "test:ui": "node tests/ui-test.mjs",
-    "test:e2e": "node tests/e2e-electron.mjs"
+    "test:e2e": "node tests/e2e-electron.mjs",
+    "music": "node scripts/fetch-music.cjs",
+    "test:unit": "node tests/photodate-test.cjs"
   },
   "author": "MEMORIA",
   "license": "UNLICENSED",
@@ -78,6 +80,15 @@
       "category": "public.app-category.video",
       "icon": "build/icon.png"
     },
-    "publish": null
+    "publish": null,
+    "extraResources": [
+      {
+        "from": "music-library",
+        "to": "music-library",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
   }
 }

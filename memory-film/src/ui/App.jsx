@@ -2,9 +2,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectStore, setPath, photoMeta, setPhotoMeta } from './store.js';
 import { buildTimeline, activeAt } from '../engine/timeline.js';
+import { planSelection, clearSelection } from '../engine/select.js';
+import { analyzePhotos } from '../engine/quality.js';
 import { AudioPreview } from '../engine/audio.js';
-import { newId, normalizeProject, defaultProject, applyTemplate, TEMPLATES } from '../engine/presets.js';
-import { importPaths, importWebFiles, mergeItems, defaultVideoName, estimateSizeMB, musicLength } from './logic.js';
+import { newId, normalizeProject, defaultProject, applyTemplate, TEMPLATES, MONTAGE_STYLES } from '../engine/presets.js';
+import { fmtTime } from '../engine/math.js';
+import { importPaths, importWebFiles, mergeItems, defaultVideoName, estimateSizeMB, musicLength, sortPhotos } from './logic.js';
 import { api, isDesktop, baseName } from '../platform.js';
 import { Preview } from './Preview.jsx';
 import { Filmstrip } from './Filmstrip.jsx';
@@ -38,7 +41,13 @@ function sceneLabel(tl, key, project) {
   if (!key) return '';
   if (key === 'intro') return '인트로';
   if (key === 'outro') return '엔딩';
-  const photos = project.items.filter((i) => i.type === 'photo');
+  const photos = project.items.filter((i) => i.type === 'photo' && !i.skip);
+  if (key.startsWith('g:')) {
+    const g = tl.segments.find((s) => s.key === key);
+    if (!g) return '';
+    const a = photos.indexOf(g.items[0]) + 1;
+    return `몽타주 · ${MONTAGE_STYLES[g.style]?.name || ''} · 사진 ${a}–${a + g.items.length - 1} / ${photos.length}`;
+  }
   const it = project.items.find((i) => i.id === key);
   if (!it) return '';
   if (it.type === 'chapter') return `챕터 · ${it.title || ''}`;
@@ -68,6 +77,9 @@ export default function App() {
   const [showTemplates, setShowTemplates] = useState(() => !store.restored && !store.project.items.length && !store.project.template);
   const [previewReq, setPreviewReq] = useState(null);
   const [compact, setCompact] = useState(false);
+  const [busy, setBusy] = useState(null); // { text, done, total }
+  const busyCancel = useRef(false);
+  const autoSelectRef = useRef(null);
   const previewRef = useRef(null);
   const audio = useMemo(() => new AudioPreview(), []);
   const fileInput = useRef(null);
@@ -123,6 +135,14 @@ export default function App() {
         }
         toast(msg, skipped.length ? 'warn' : 'ok');
       }, 0);
+      // 사진이 많아 영상이 길어지면: 클릭 한 번으로 '3분 영상 + 좋은 사진만' 제안
+      setTimeout(() => {
+        const p = projectRef.current;
+        const n = p.items.filter((i) => i.type === 'photo' && !i.skip).length;
+        const total = tlRef.current.total;
+        if (added && n >= 40 && total > 360 && p.style.lengthMode !== 'total')
+          toast(`사진 ${n}장 → 영상이 약 ${Math.round(total / 60)}분입니다`, 'info', { label: '3분 영상으로 좋은 사진만 고르기', run: () => autoSelectRef.current?.(180, 3) });
+      }, 400);
     },
     [toast, update],
   );
@@ -175,6 +195,23 @@ export default function App() {
         });
       },
       openTemplates: () => setShowTemplates(true),
+      addLibraryTrack: (t) => addTrack(t.path, t.title, { libId: t.id }),
+      autoSelect: (target, per) => autoSelectRef.current?.(target, per),
+      clearSelection: () => {
+        update((p) => clearSelection(p));
+        toast('모든 사진을 다시 사용합니다');
+      },
+      sortByDate: async () => {
+        // 촬영일 정보가 없던 사진은 폴더·파일 이름의 연도로 날짜를 다시 계산한 뒤 정렬
+        let fixed = new Map();
+        const weak = projectRef.current.items.filter((i) => i.type === 'photo' && (!i.dateSource || i.dateSource === 'file') && !/^(blob:|data:)/.test(i.path));
+        if (isDesktop && api.photoDates && weak.length) {
+          const r = await api.photoDates(weak.map((i) => i.path));
+          weak.forEach((it, k) => r[k] && r[k].dateSource !== 'file' && fixed.set(it.id, r[k]));
+        }
+        update((p) => sortPhotos({ ...p, items: p.items.map((i) => (fixed.has(i.id) ? { ...i, ...fixed.get(i.id) } : i)) }, 'date'));
+        toast(fixed.size ? `촬영일 순으로 정렬했습니다 · 촬영일 정보가 없던 ${fixed.size}장은 폴더·파일 이름의 연도를 사용` : '촬영일 순으로 정렬했습니다');
+      },
       /** 입력 중인 문구가 보이는 장면으로 미리보기 이동 (재생 중이 아닐 때) */
       peek: (kind) => {
         const s = tlRef.current.segments.find((x) => x.type === kind);
@@ -227,13 +264,24 @@ export default function App() {
     [addItems, project, selected, toast, undo, update],
   );
 
-  const addTrack = async (path, name) => {
+  const addTrack = async (path, name, extra = {}) => {
     try {
       const duration = await audio.load(path);
-      update((p) => setPath(p, 'music.tracks', [...p.music.tracks, { path, name, duration }]));
+      update((p) => setPath(p, 'music.tracks', [...p.music.tracks, { path, name, duration, ...extra }]));
+      if (extra.libId) {
+        // 라이브러리 곡이 영상보다 짧으면 자동으로 반복 재생
+        const ml = musicLength({ ...projectRef.current.music, tracks: [...projectRef.current.music.tracks, { duration }] });
+        if (ml < tlRef.current.total - 1 && !projectRef.current.music.loop) {
+          update((p) => setPath(p, 'music.loop', true));
+          return toast(`‘${name}’ 추가 · 영상(${fmtTime(tlRef.current.total)})보다 짧아 자동으로 반복합니다`, 'ok', {
+            label: '대신 영상 길이를 음악에 맞추기',
+            run: () => update((p) => ({ ...p, music: { ...p.music, loop: false }, style: { ...p.style, lengthMode: 'total', targetDuration: Math.round(musicLength(p.music) * 10) / 10 } })),
+          });
+        }
+      }
       const hasPhotos = projectRef.current.items.some((i) => i.type === 'photo');
       if (hasPhotos && projectRef.current.style.lengthMode !== 'total')
-        toast(`‘${name}’ 추가 (${Math.floor(duration / 60)}분 ${Math.round(duration % 60)}초)`, 'ok', {
+        toast(`‘${name}’ 추가 (${fmtTime(duration)})`, 'ok', {
           label: '영상 길이를 음악에 맞추기',
           run: () =>
             update((p) => {
@@ -241,7 +289,7 @@ export default function App() {
               return ml > 0 ? { ...p, style: { ...p.style, lengthMode: 'total', targetDuration: Math.round(ml * 10) / 10 } } : p;
             }),
         });
-      else toast(`‘${name}’ 추가 (${Math.floor(duration / 60)}분 ${Math.round(duration % 60)}초)`);
+      else toast(`‘${name}’ 추가 (${fmtTime(duration)})`);
     } catch {
       toast(`‘${name}’ 파일을 읽을 수 없습니다`, 'error');
     }
@@ -277,13 +325,69 @@ export default function App() {
   };
 
   const save = async (as = false) => {
-    if (!isDesktop) return toast('PC 버전에서 저장할 수 있습니다', 'warn');
+    if (!isDesktop) {
+      toast('PC 버전에서 저장할 수 있습니다', 'warn');
+      return false;
+    }
     const json = JSON.stringify({ app: 'MEMORIA', savedAt: new Date().toISOString(), project }, null, 1);
     const p = await api.saveProject(json, as ? null : store.filePath, project.name);
     if (p) {
       store.markSaved(p);
       toast('프로젝트를 저장했습니다');
+      return true;
     }
+    return false;
+  };
+
+  // ------------------------------------------------ 자동 사진 선별
+  const autoSelect = async (target, per) => {
+    const need = projectRef.current.items.filter((i) => i.type === 'photo' && typeof i.q !== 'number');
+    let qs = new Map();
+    if (need.length) {
+      busyCancel.current = false;
+      setBusy({ text: '사진 화질(선명도·밝기) 분석 중…', done: 0, total: need.length });
+      qs = await analyzePhotos(need, (d, t) => d % 3 === 0 || d === t ? setBusy((b) => b && { ...b, done: d }) : null, () => busyCancel.current);
+      setBusy(null);
+      if (busyCancel.current) return toast('자동 선별을 취소했습니다', 'info');
+    }
+    let plan = null;
+    update((p) => {
+      const withQ = qs.size ? { ...p, items: p.items.map((i) => (qs.has(i.id) ? { ...i, q: qs.get(i.id) } : i)) } : p;
+      plan = planSelection(withQ, target, per);
+      return plan.project;
+    });
+    setTimeout(() => {
+      if (!plan) return;
+      setStep('photos');
+      toast(
+        plan.count >= plan.total
+          ? `사진 ${plan.total}장을 모두 사용합니다 (1장당 약 ${plan.photoDuration.toFixed(1)}초)`
+          : `${plan.total}장 중 ${plan.count}장을 골랐습니다 · 영상 ${fmtTime(target)}, 1장당 약 ${plan.photoDuration.toFixed(1)}초. 빠진 사진은 흐리게 표시됩니다.`,
+        'ok',
+        { label: '되돌리기', run: () => undo() },
+      );
+    }, 0);
+  };
+  autoSelectRef.current = autoSelect;
+
+  // ------------------------------------------------ 새로 만들기
+  const [askNew, setAskNew] = useState(false);
+  const hasWork = project.items.length > 0 || project.music.tracks.length > 0;
+  const unsaved = hasWork && (store.dirty || !store.filePath);
+  const startNew = () => {
+    previewRef.current?.pause?.();
+    store.replace(defaultProject());
+    setSelected(new Set());
+    setActiveKey(null);
+    setAskNew(false);
+    setStep('photos');
+    setShowTemplates(true);
+    setTimeout(() => previewRef.current?.seek(0), 50);
+    toast('새 프로젝트를 시작했습니다');
+  };
+  const requestNew = () => (unsaved ? setAskNew(true) : startNew());
+  const saveThenNew = async () => {
+    if (await save(false)) startNew();
   };
   const open = async () => {
     if (!isDesktop) return;
@@ -291,7 +395,8 @@ export default function App() {
     if (!r) return;
     try {
       const data = JSON.parse(r.json);
-      const p = normalizeProject(data.project || data);
+      let p = normalizeProject(data.project || data);
+      p = await relinkLibraryMusic(p);
       store.replace(p, r.path);
       setSelected(new Set());
       toast(`‘${p.name}’ 프로젝트를 열었습니다`);
@@ -302,10 +407,32 @@ export default function App() {
     }
   };
 
+  /** 다른 PC·설치 위치에서 연 프로젝트: 무료 음악 라이브러리 곡의 경로를 이 PC 기준으로 다시 연결 */
+  const relinkLibraryMusic = async (p) => {
+    const lib = p.music.tracks.filter((t) => t.libId);
+    if (!lib.length || !api?.musicLibrary) return p;
+    try {
+      const ex = await api.exists(lib.map((t) => t.path));
+      if (ex.every(Boolean)) return p;
+      const { tracks } = await api.musicLibrary();
+      const byId = new Map(tracks.filter((t) => t.local).map((t) => [t.id, t.path]));
+      return { ...p, music: { ...p.music, tracks: p.music.tracks.map((t) => (t.libId && byId.has(t.libId) ? { ...t, path: byId.get(t.libId) } : t)) } };
+    } catch {
+      return p;
+    }
+  };
+
   // ------------------------------------------------ 선택 / 탐색
   const seekToKey = useCallback((key) => {
-    const s = tlRef.current.segments.find((x) => x.key === key);
-    if (s) previewRef.current?.seek(s.start + Math.min(s.tIn + 0.4, s.dur * 0.5));
+    const t = tlRef.current;
+    const s = t.segments.find((x) => x.key === key) || t.byItem?.get(key);
+    if (!s) return;
+    if (s.type === 'group' && s.key !== key) {
+      // 몽타주 안의 사진: 그 사진이 화면에 다 들어온 뒤 시점으로
+      const k = Math.max(0, s.items.findIndex((i) => i.id === key));
+      const body = s.dur - s.tIn - s.tOut;
+      previewRef.current?.seek(s.start + s.tIn + body * Math.min(0.85, 0.2 + (0.6 * (k + 1)) / s.items.length));
+    } else previewRef.current?.seek(s.start + Math.min(s.tIn + 0.4, s.dur * 0.5));
   }, []);
 
   const onSelect = useCallback(
@@ -398,7 +525,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e) => {
       const tag = e.target.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || exportJob || showTemplates) return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || exportJob || showTemplates || askNew || busy) return;
       const mod = e.ctrlKey || e.metaKey;
       if (e.code === 'Space') {
         e.preventDefault();
@@ -412,6 +539,9 @@ export default function App() {
       } else if (mod && e.key.toLowerCase() === 's') {
         e.preventDefault();
         save(e.shiftKey);
+      } else if (mod && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        requestNew();
       } else if (mod && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         setSelected(new Set(project.items.map((i) => i.id)));
@@ -420,13 +550,15 @@ export default function App() {
       } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
         const keys = tl.segments.map((s) => s.key);
-        const cur = selected.size === 1 ? [...selected][0] : activeKey;
+        const one = selected.size === 1 ? [...selected][0] : null;
+        const cur = one ? tl.byItem?.get(one)?.key || one : activeKey;
         let i = keys.indexOf(cur);
         i = Math.max(0, Math.min(keys.length - 1, i + (e.key === 'ArrowRight' ? 1 : -1)));
         const k = keys[i];
         if (!k) return;
-        setSelected(new Set([k]));
-        lastSel.current = k;
+        const g = tl.segments[i].type === 'group' ? tl.segments[i] : null;
+        setSelected(new Set(g ? g.items.map((x) => x.id) : [k]));
+        lastSel.current = g ? g.items[0].id : k;
         seekToKey(k);
       } else if (e.key === 'Escape') setSelected(new Set());
     };
@@ -486,6 +618,9 @@ export default function App() {
           <span className="sep" />
           <Button icon="sparkle" onClick={() => setShowTemplates(true)} title="영상 종류(템플릿) 고르기">
             템플릿
+          </Button>
+          <Button icon="plus" onClick={requestNew} title="지금 작업을 닫고 새 영상 만들기 (Ctrl+N)">
+            새로 만들기
           </Button>
           <Button icon="open" onClick={open} title="프로젝트 열기">
             열기
@@ -575,7 +710,7 @@ export default function App() {
       <footer className="strip-area">
         <div className="strip-bar">
           <span>
-            장면 <b>{tl.segments.length}</b> · 전체 <b>{Math.floor(tl.total / 60)}분 {Math.round(tl.total % 60)}초</b>
+            장면 <b>{tl.segments.length}</b> · 전체 <b>{Math.floor(Math.round(tl.total) / 60)}분 {Math.round(tl.total) % 60}초</b>
           </span>
           <span className="strip-hint">드래그로 순서 변경 · ◆ 를 눌러 전환 효과 선택 · Shift/Ctrl 다중 선택</span>
           <div className="strip-actions">
@@ -632,6 +767,48 @@ export default function App() {
         ))}
       </div>
 
+      {busy && (
+        <div className="modal-back">
+          <div className="modal busy-modal" role="dialog" aria-modal="true">
+            <div className="modal-title">
+              <span className="spinner" /> {busy.text}
+            </div>
+            <div className="busy-bar">
+              <i style={{ width: `${(busy.done / Math.max(1, busy.total)) * 100}%` }} />
+            </div>
+            <p className="hint small">
+              {busy.done} / {busy.total}장 · 한 번 분석한 사진은 다시 분석하지 않습니다.
+            </p>
+            <div className="modal-actions">
+              <Button onClick={() => (busyCancel.current = true)}>취소</Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {askNew && (
+        <div className="modal-back" onMouseDown={() => setAskNew(false)}>
+          <div className="modal confirm-modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="modal-title">
+              <Icon name="warn" size={20} /> 지금 작업을 저장할까요?
+            </div>
+            <p className="hint">
+              ‘{project.name}’에 저장하지 않은 변경 사항이 있습니다. 새로 만들면 지금 화면의 사진·문구·음악 설정이 모두 비워집니다.
+              {!isDesktop && ' (웹 미리보기 버전은 저장할 수 없습니다)'}
+            </p>
+            <div className="modal-actions">
+              <Button onClick={() => setAskNew(false)}>취소</Button>
+              <Button variant="danger" onClick={startNew}>
+                저장 안 함
+              </Button>
+              {isDesktop && (
+                <Button icon="save" variant="primary" onClick={saveThenNew}>
+                  저장하고 새로 만들기
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {showTemplates && <TemplateGallery project={project} onApply={onApplyTemplate} onClose={() => setShowTemplates(false)} />}
       {exportJob && <ExportModal project={project} outPath={exportJob.path} draft={exportJob.draft} onClose={() => setExportJob(null)} />}
 

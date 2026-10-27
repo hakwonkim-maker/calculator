@@ -12,7 +12,7 @@ const big = !!process.env.MF_FIXTURES;
 const outFile = path.join(root, 'out', 'e2e.mp4');
 fs.rmSync(outFile, { force: true });
 
-const app = await _electron.launch({ executablePath: process.env.MF_EXE || path.join(root, '..', 'node_modules', 'electron', 'dist', 'electron'), args: [...(process.env.MF_EXE ? [] : [path.join(root, '..')]), '--no-sandbox', '--user-data-dir=' + fs.mkdtempSync('/tmp/claude-0/mf-')], env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: '1' } });
+const app = await _electron.launch({ executablePath: process.env.MF_EXE || path.join(root, '..', 'node_modules', 'electron', 'dist', 'electron'), args: [...(process.env.MF_EXE ? [] : [path.join(root, '..')]), '--no-sandbox', '--user-data-dir=' + fs.mkdtempSync('/tmp/claude-0/mf-')], env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', MF_MUSIC_DIR: fs.mkdtempSync('/tmp/claude-0/mf-music-'), NO_PROXY: '127.0.0.1,localhost' } });
 await app.evaluate(({ dialog }, { fixtures, outFile, musicDir }) => {
   dialog.showOpenDialog = async (_w, opts) => {
     const props = opts?.properties || _w?.properties || [];
@@ -52,14 +52,34 @@ if (big) {
   console.log('scroll+play ms', Date.now() - t0, 'event-loop lag ms', lag.toFixed(1));
   await win.screenshot({ path: path.join(root, 'out', 'e2e_big.png') });
 }
+// 인트로: 새 임팩트 인트로 + 세부 조정
+await win.click('.step:has-text("문구")');
+await win.click('.pcard:has-text("타임 롤")');
+await win.waitForSelector('.intro-tune');
+console.log('intro tune:', (await win.textContent('.intro-tune')).replace(/\s+/g, ' ').slice(0, 120));
+// 스타일: 폴더 이름 표시 + 몽타주 자주
+await win.click('.step:has-text("스타일")');
+await win.click('.segmented button:has-text("모든 사진")');
+await win.click('.segmented button:has-text("자주")');
+await win.click('.step:has-text("사진")');
 // 캡션 입력
 await win.click('.card-slot >> nth=0');
 await win.fill('.inspector input >> nth=0', '1996');
 await win.fill('.inspector input >> nth=1', '창립 기념식');
 // 음악
 await win.click('.step:has-text("음악")');
+// 무료 음악 라이브러리 (MF_MUSIC_SITE 가 있으면 온라인 받기까지 검증)
+await win.waitForSelector('.lib');
+if (process.env.MF_MUSIC_SITE) {
+  await win.click('.lib button:has-text("인터넷에서 무료 음악")');
+  await win.waitForSelector('.lib-row', { timeout: 30000 });
+  console.log('library rows:', await win.$$eval('.lib-row', (e) => e.length));
+  await win.click('.lib-row >> nth=0 >> button:has-text("넣기")');
+  await win.waitForSelector('.lib-used', { timeout: 30000 });
+  console.log('library track added:', (await win.textContent('.track-list')).replace(/\s+/g, ' ').slice(0, 80));
+}
 await win.click('button:has-text("음악 파일 추가")');
-await win.waitForSelector('.track >> nth=1', { timeout: 20000 });
+await win.waitForSelector(process.env.MF_MUSIC_SITE ? '.track >> nth=2' : '.track >> nth=1', { timeout: 20000 });
 await win.waitForTimeout(800);
 if (!big) await win.click('button:has-text("음악 길이에 영상 맞추기")');
 await win.waitForTimeout(500);
@@ -89,5 +109,14 @@ if (!big && !err) {
   await win.click('.modal-actions button:has-text("닫기")');
   console.log('export panel ETA:', (await win.textContent('.panel')).match(/예상 제작 시간[^)]*\)?/)?.[0]);
 }
+// 새로 만들기: 저장 확인 → 취소 → 저장 안 함
+await win.click('.top-actions button:has-text("새로 만들기")');
+await win.waitForSelector('.confirm-modal');
+await win.click('.confirm-modal button:has-text("취소")');
+console.log('after cancel photos:', await win.$$eval('.card-slot', (e) => e.length));
+await win.click('.top-actions button:has-text("새로 만들기")');
+await win.click('.confirm-modal button:has-text("저장 안 함")');
+await win.waitForSelector('.tpl-modal');
+console.log('after new: photos', await win.$$eval('.card-slot', (e) => e.length), 'tracks', await win.evaluate(() => document.querySelectorAll('.track').length));
 console.log('page errors:', errors.length ? JSON.stringify(errors).slice(0, 1500) : 'none');
 await app.close();

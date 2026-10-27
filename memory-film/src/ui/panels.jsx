@@ -1,15 +1,16 @@
 // 좌측 단계별 설정 패널 — 모든 선택은 카드 클릭 한 번으로 적용
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Section, Field, TextInput, Slider, Segmented, Toggle, Button, Icon } from './controls.jsx';
 import {
   THEMES, TYPOGRAPHY, LOOKS, TRANSITION_STYLES, RESOLUTIONS, QUALITY, INTRO_STYLES, OUTRO_STYLES, ASPECTS, TEMPLATES,
-  frameSize, outputSize, applyTemplate,
+  frameSize, outputSize, applyTemplate, introTiming, MONTAGE_FREQ,
 } from '../engine/presets.js';
 import { fitPhotoDurationToLength, minimumLength } from '../engine/timeline.js';
+import { planSelection } from '../engine/select.js';
 import { fmtTime } from '../engine/math.js';
 import { setPath } from './store.js';
-import { sortPhotos, shufflePhotos, autoChapters, autoYearLabels, musicLength, checklist, estimateSizeMB } from './logic.js';
-import { isDesktop, baseName } from '../platform.js';
+import { sortPhotos, shufflePhotos, autoChapters, autoYearLabels, musicLength, checklist, estimateSizeMB, hasKnownYear } from './logic.js';
+import { isDesktop, baseName, api, mediaUrl } from '../platform.js';
 import { useThumb } from './thumbs.js';
 import { estimateExportSeconds } from './ExportModal.jsx';
 
@@ -58,10 +59,12 @@ export function TemplateGallery({ project, onApply, onClose }) {
 }
 
 // ---------------------------------------------------------------- 1. 사진
-export function PhotosPanel({ project, update, tl, actions, toast }) {
+export function PhotosPanel({ project, update, tl, actions, toast, onSelectIds }) {
   const [recursive, setRecursive] = useState(true);
   const photos = project.items.filter((i) => i.type === 'photo');
-  const exifCount = photos.filter((p) => p.dateSource === 'exif').length;
+  const exifCount = photos.filter(hasKnownYear).length;
+  const guessCount = photos.filter((p) => p.dateSource === 'name' || p.dateSource === 'folder').length;
+  const fileDateCount = photos.filter((p) => !hasKnownYear(p)).length;
   const chapters = project.items.filter((i) => i.type === 'chapter').length;
   return (
     <>
@@ -81,8 +84,8 @@ export function PhotosPanel({ project, update, tl, actions, toast }) {
         {isDesktop && <Toggle checked={recursive} onChange={setRecursive} label="하위 폴더 포함" desc="연도별로 폴더가 나뉘어 있을 때" />}
         <div className="stat-row">
           <div>
-            <b>{photos.length}</b>
-            <span>사진</span>
+            <b>{photos.some((p) => p.skip) ? `${photos.filter((p) => !p.skip).length}/${photos.length}` : photos.length}</b>
+            <span>{photos.some((p) => p.skip) ? '사용 / 전체 사진' : '사진'}</span>
           </div>
           <div>
             <b>{chapters}</b>
@@ -95,11 +98,11 @@ export function PhotosPanel({ project, update, tl, actions, toast }) {
         </div>
       </Section>
 
-      <LengthSection project={project} update={update} tl={tl} />
+      <LengthSection project={project} update={update} tl={tl} actions={actions} />
 
       <Section title="순서 정리" hint="정렬은 챕터 카드 사이 구간별로 적용되어 챕터 구성이 유지됩니다.">
         <div className="btn-row">
-          <Button icon="calendar" variant="soft" size="sm" disabled={!photos.length} onClick={() => { update((p) => sortPhotos(p, 'date')); toast('촬영일 순으로 정렬했습니다'); }}>
+          <Button icon="calendar" variant="soft" size="sm" disabled={!photos.length} onClick={actions.sortByDate}>
             촬영일순
           </Button>
           <Button icon="sort" variant="soft" size="sm" disabled={!photos.length} onClick={() => { update((p) => sortPhotos(p, 'name')); toast('파일 이름 순으로 정렬했습니다'); }}>
@@ -112,9 +115,17 @@ export function PhotosPanel({ project, update, tl, actions, toast }) {
             섞기
           </Button>
         </div>
+        {fileDateCount > 0 && (
+          <p className="hint small">
+            촬영일 정보가 없는 사진 {fileDateCount}장은 파일 날짜(복사·스캔한 날)로 정렬되어 순서가 어긋날 수 있습니다. 폴더 이름에 연도를 넣거나(예: <b>1999_창립식</b>) 필름스트립에서 끌어 옮겨 주세요.{' '}
+            <button className="link" onClick={() => onSelectIds(photos.filter((p) => !hasKnownYear(p)).map((p) => p.id))}>
+              해당 사진 보기
+            </button>
+          </p>
+        )}
       </Section>
 
-      <Section title="스토리 자동 구성" hint={exifCount ? `촬영일 정보가 있는 사진 ${exifCount}장을 기준으로 만듭니다.` : '촬영일(EXIF) 정보가 있는 사진에만 적용됩니다. 스캔한 옛 사진은 직접 입력해 주세요.'}>
+      <Section title="스토리 자동 구성" hint={exifCount ? `연도를 알 수 있는 사진 ${exifCount}장을 기준으로 만듭니다${guessCount ? ` (이 중 ${guessCount}장은 폴더·파일 이름의 연도 사용)` : ''}.` : '촬영일 정보가 있거나 폴더·파일 이름에 연도(예: 1999_창립식)가 있는 사진에 적용됩니다.'}>
         <div className="stack">
           <Button icon="chapter" variant="soft" disabled={!exifCount} onClick={() => { update((p) => autoChapters(p)); toast('연도가 바뀌는 지점에 챕터 카드를 넣었습니다'); }}>
             연도별 챕터 카드 자동 생성
@@ -149,11 +160,50 @@ export function PhotosPanel({ project, update, tl, actions, toast }) {
 }
 
 // ---------------------------------------------------------------- 영상 길이
-function LengthSection({ project, update, tl }) {
+/** 자동 사진 선별: 목표 길이에 맞춰 좋은 사진만 골라 1장당 여유 있게 */
+function AutoSelect({ project, actions, target }) {
+  const [per, setPer] = useState(3);
+  const all = project.items.filter((i) => i.type === 'photo');
+  const used = all.filter((i) => !i.skip).length;
+  const plan = React.useMemo(() => (all.length > 1 ? planSelection(project, target, per) : null), [project.items, project.style, project.intro, project.outro, target, per]);
+  if (!plan) return null;
+  const skipped = all.length - used;
+  return (
+    <div className="autosel">
+      <div className="autosel-head">
+        <b>
+          <Icon name="sparkle" size={14} /> 자동 사진 선별
+        </b>
+        {skipped > 0 && <span className="autosel-state">{all.length}장 중 {used}장 사용 중</span>}
+      </div>
+      <p className="hint small">
+        좋은 사진만 골라 1장당 여유 있게 보여 줍니다. ★대표·자막 사진은 항상 넣고, 흔들린·어두운 사진과 연속 촬영 중복은 빼며, 폴더(행사·연도)별로 고르게 고릅니다. 빠진 사진은 지워지지 않고 필름스트립에 흐리게 남습니다.
+      </p>
+      <Field label="사진 1장당 보여 줄 시간">
+        <Segmented value={per} onChange={setPer} size="sm" options={[[2, '2초'], [3, '3초 권장'], [4, '4초'], [5, '5초']]} />
+      </Field>
+      <div className="autosel-plan">
+        {plan.count >= plan.total ? `사진 ${plan.total}장을 모두 1장당 ${plan.photoDuration.toFixed(1)}초로 넣을 수 있습니다.` : `${plan.total}장 중 ${plan.count}장을 골라 1장당 약 ${plan.photoDuration.toFixed(1)}초`}
+      </div>
+      <div className="btn-row">
+        <Button icon="sparkle" variant="primary" size="sm" onClick={() => actions.autoSelect(target, per)} disabled={plan.count >= plan.total && !skipped}>
+          {skipped ? '다시 선별' : '자동 선별 적용'}
+        </Button>
+        {skipped > 0 && (
+          <Button size="sm" variant="soft" onClick={actions.clearSelection}>
+            모든 사진 사용
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LengthSection({ project, update, tl, actions }) {
   const st = project.style;
   const mode = st.lengthMode === 'total' ? 'total' : 'perPhoto';
   const target = Number(st.targetDuration) || 180;
-  const photos = project.items.filter((i) => i.type === 'photo').length;
+  const photos = project.items.filter((i) => i.type === 'photo' && !i.skip).length;
   const mm = Math.floor(target / 60);
   const ss = Math.round(target % 60);
   const setTarget = (sec) => update((p) => ({ ...p, style: { ...p.style, lengthMode: 'total', targetDuration: Math.max(10, Math.min(3 * 3600, Math.round(sec))) } }), 'target');
@@ -199,11 +249,23 @@ function LengthSection({ project, update, tl }) {
               </span>
             </div>
           )}
+          {photos > 0 && (pd < 2.6 || project.items.some((i) => i.skip)) && <AutoSelect project={project} actions={actions} target={target} />}
         </>
       ) : (
         <>
           <Slider label="사진 1장당 시간" value={st.photoDuration} min={1} max={12} step={0.1} format={fmtSec} onChange={(v) => update((p) => setPath(p, 'style.photoDuration', v), 'pd')} />
           <p className="hint small">사진 {photos}장 → 전체 {fmtTime(tl.total)} (인트로·엔딩 포함)</p>
+          {photos >= 30 && tl.total > 360 && (
+            <div className="len-result warn">
+              <b>영상이 {Math.round(tl.total / 60)}분으로 깁니다</b>
+              <span>
+                ‘전체 길이 정하기’에서 원하는 길이를 고르면 좋은 사진만 자동으로 골라 줍니다.{' '}
+                <button className="link" onClick={() => update((p) => ({ ...p, style: { ...p.style, lengthMode: 'total', targetDuration: 180 } }))}>
+                  3분으로 정하기
+                </button>
+              </span>
+            </div>
+          )}
         </>
       )}
     </Section>
@@ -211,8 +273,70 @@ function LengthSection({ project, update, tl }) {
 }
 
 // ---------------------------------------------------------------- 2. 인트로·문구
-export function TextPanel({ project, update, actions }) {
+/** 인트로 세부 조정: 사진만 보이는 시간 · 글자 속도 · 배경 어둡기 */
+function IntroTuning({ project, update, tl, actions }) {
+  const intro = project.intro;
+  const meta = INTRO_STYLES[intro.style] || {};
+  const seg = tl.segments.find((s) => s.type === 'intro');
+  const IT = introTiming(intro, seg?.dur || intro.duration);
+  const setI = (k, coalesce) => (v) => update((p) => setPath(p, 'intro.' + k, v), coalesce ? 'intro.' + k : null);
+  const custom = (Number(intro.photoPhase) || 1) !== 1 || (intro.textSpeed || 'normal') !== 'normal' || intro.dim != null;
+  const dimDefault = intro.style === 'cinematic' ? 0.55 : 0.62;
+  return (
+    <div className="intro-tune">
+      <div className="intro-tune-head">
+        <b>인트로 세부 조정</b>
+        {custom && (
+          <button className="link" onClick={() => update((p) => ({ ...p, intro: { ...p.intro, photoPhase: 1, textSpeed: 'normal', dim: null } }))}>
+            기본값으로
+          </button>
+        )}
+      </div>
+      {meta.photo && (
+        <Slider
+          label="글자 전에 사진만 보이는 시간"
+          value={Number(intro.photoPhase) || 1}
+          min={0.4}
+          max={3}
+          step={0.05}
+          format={() => `${IT.s.toFixed(1)}초`}
+          onChange={setI('photoPhase', true)}
+        />
+      )}
+      <Field label="글자가 나타나는 속도">
+        <Segmented value={intro.textSpeed || 'normal'} onChange={setI('textSpeed')} size="sm" options={[['slow', '천천히'], ['normal', '보통'], ['fast', '빠르게']]} />
+      </Field>
+      {meta.dimmable && (
+        <Slider
+          label="글자 뒤 사진 어둡기"
+          value={intro.dim == null ? dimDefault : Number(intro.dim)}
+          min={0.15}
+          max={0.9}
+          step={0.01}
+          format={(v) => (v < 0.35 ? '밝게 ' : v > 0.72 ? '어둡게 ' : '') + Math.round(v * 100) + '%'}
+          onChange={setI('dim', true)}
+        />
+      )}
+      {seg?.extended && (
+        <p className="hint small accent">
+          글자가 끝까지 읽히도록 실제 인트로는 <b>{seg.dur.toFixed(1)}초</b>로 자동 조정됩니다.
+        </p>
+      )}
+      <p className="hint small">
+        {meta.photo ? '사진은 ‘★ 대표 사진’으로 지정한 사진부터 쓰입니다 (사진을 누르고 오른쪽 속성 창에서 지정). ' : ''}
+        바꾸면 <button className="link" onClick={actions.previewIntro}>인트로 미리보기</button>로 확인하세요.
+      </p>
+    </div>
+  );
+}
+
+export function TextPanel({ project, update, tl, actions }) {
   const t = project.text;
+  // 연도를 알 수 있는 사진들의 첫 해 ~ 마지막 해 (연도 카운터 인트로용)
+  const photoYears = React.useMemo(() => {
+    const ys = project.items.filter((i) => hasKnownYear(i) && !i.skip && i.date).map((i) => new Date(i.date).getFullYear());
+    return ys.length >= 2 && Math.min(...ys) < Math.max(...ys) ? [Math.min(...ys), Math.max(...ys)] : null;
+  }, [project.items]);
   const set = (k) => (v) => update((p) => setPath(p, 'text.' + k, v), 'text.' + k);
   const peekIntro = () => actions.peek('intro');
   const peekOutro = () => actions.peek('outro');
@@ -240,6 +364,7 @@ export function TextPanel({ project, update, actions }) {
                   on={project.intro.style === id}
                   title={s.name}
                   desc={s.desc}
+                  badge={s.isNew ? 'NEW' : null}
                   onClick={() => {
                     update((p) => setPath(p, 'intro.style', id));
                     actions.previewIntro();
@@ -248,6 +373,7 @@ export function TextPanel({ project, update, actions }) {
               ))}
             </div>
             <Slider label="인트로 길이" value={project.intro.duration} min={6} max={18} step={0.5} format={fmtSec} onChange={(v) => update((p) => setPath(p, 'intro.duration', v), 'introdur')} />
+            <IntroTuning project={project} update={update} tl={tl} actions={actions} />
             <Button icon="play" variant="soft" size="sm" onClick={actions.previewIntro}>
               인트로 미리보기
             </Button>
@@ -273,15 +399,22 @@ export function TextPanel({ project, update, actions }) {
         <Field label="기관·회사·이름">
           <TextInput value={t.org} onChange={set('org')} onFocus={peekIntro} placeholder="예) 주식회사 ○○○" maxLength={40} />
         </Field>
-        {project.intro.style === 'light' && (
-          <div className="two">
-            <Field label="카운터 시작 연도">
-              <TextInput value={String(t.startYear)} onChange={(v) => set('startYear')(v.replace(/[^0-9]/g, ''))} maxLength={4} />
-            </Field>
-            <Field label="카운터 끝 연도">
-              <TextInput value={String(t.endYear)} onChange={(v) => set('endYear')(v.replace(/[^0-9]/g, ''))} maxLength={4} />
-            </Field>
-          </div>
+        {(project.intro.style === 'light' || project.intro.style === 'timeroll') && (
+          <>
+            <div className="two">
+              <Field label="연도 카운터 시작">
+                <TextInput value={String(t.startYear)} onChange={(v) => set('startYear')(v.replace(/[^0-9]/g, ''))} onFocus={peekIntro} maxLength={4} />
+              </Field>
+              <Field label="연도 카운터 끝">
+                <TextInput value={String(t.endYear)} onChange={(v) => set('endYear')(v.replace(/[^0-9]/g, ''))} onFocus={peekIntro} maxLength={4} />
+              </Field>
+            </div>
+            {photoYears && (String(t.startYear) !== String(photoYears[0]) || String(t.endYear) !== String(photoYears[1])) && (
+              <button className="link" onClick={() => update((p) => ({ ...p, text: { ...p.text, startYear: photoYears[0], endYear: photoYears[1] } }))}>
+                사진 연도로 채우기 ({photoYears[0]} → {photoYears[1]})
+              </button>
+            )}
+          </>
         )}
         <Field label="로고 (선택)" hint="투명 배경 PNG를 권장합니다. 인트로·엔딩·워터마크에 쓰입니다.">
           <div className="btn-row">
@@ -406,6 +539,22 @@ export function StylePanel({ project, update, actions }) {
         <p className="hint small">개별 전환은 아래 필름스트립의 ◆ 를 눌러 고르면 바로 미리보기로 재생됩니다.</p>
       </Section>
 
+      <Section title="몽타주 장면" hint="사진 사이사이에 폴라로이드·모자이크·분할 화면·필름 스트립 장면을 자동으로 섞어 지루하지 않게 합니다. 자막이나 개별 설정이 있는 사진은 항상 한 장씩 크게 나옵니다.">
+        <Segmented
+          value={st.montage || 'normal'}
+          onChange={set('montage')}
+          options={Object.entries(MONTAGE_FREQ).map(([id, f]) => [id, f.name])}
+          size="sm"
+        />
+        <p className="hint small">
+          {MONTAGE_FREQ[st.montage || 'normal']?.gap ? `사진 ${MONTAGE_FREQ[st.montage || 'normal'].gap.join('~')}장마다 한 번씩 나옵니다.` : '모든 사진이 한 장씩 나옵니다.'}
+        </p>
+      </Section>
+
+      <Section title="폴더 이름 표시" hint="사진이 들어 있던 폴더 이름(예: 2019 체육대회)을 화면 왼쪽 위에 작게 보여 줍니다. 폴더 이름 앞의 정렬용 번호(01_ 등)는 자동으로 뺍니다.">
+        <Segmented value={st.folderLabel || 'off'} onChange={set('folderLabel')} options={[['off', '표시 안 함'], ['change', '폴더가 바뀔 때만'], ['all', '모든 사진']]} size="sm" />
+      </Section>
+
       <Section title="카메라 움직임" hint="사진이 천천히 확대·이동하는 켄 번스 효과 (사진별 지정은 오른쪽 속성 창)">
         <Segmented value={st.motion} onChange={set('motion')} options={[['none', '없음'], ['subtle', '은은하게'], ['normal', '보통'], ['strong', '역동적']]} />
       </Section>
@@ -436,6 +585,138 @@ export function StylePanel({ project, update, actions }) {
 }
 
 // ---------------------------------------------------------------- 4. 음악
+/** 무료 음악 라이브러리: 분위기별 CC0 곡 미리듣기 · 한 번 클릭으로 추가 */
+let libAudio = null;
+function MusicLibrary({ project, actions, toast }) {
+  const [lib, setLib] = useState(null);
+  const [mood, setMood] = useState('all');
+  const [playing, setPlaying] = useState(null);
+  const [busy, setBusy] = useState({});
+  const [fetching, setFetching] = useState(false);
+  const alive = useRef(true);
+  const load = () => api.musicLibrary().then((r) => alive.current && setLib(r));
+  useEffect(() => {
+    alive.current = true;
+    if (isDesktop) load();
+    return () => {
+      alive.current = false;
+      libAudio?.pause();
+      libAudio = null;
+    };
+  }, []);
+  if (!isDesktop) return <p className="hint small">무료 음악 라이브러리는 PC 프로그램에서 사용할 수 있습니다.</p>;
+  if (!lib) return <div className="empty-note">음악 목록을 불러오는 중…</div>;
+
+  const used = new Set(project.music.tracks.map((t) => t.libId).filter(Boolean));
+  const localCount = lib.tracks.filter((t) => t.local).length;
+  const list = lib.tracks.filter((t) => mood === 'all' || t.mood === mood);
+  const moodName = Object.fromEntries(lib.moods.map((m) => [m.id, m.name]));
+
+  const ensureLocal = async (t) => {
+    if (t.local) return t;
+    setBusy((b) => ({ ...b, [t.id]: true }));
+    try {
+      const r = await api.musicDownload(t.id);
+      await load();
+      return r;
+    } catch {
+      toast(`‘${t.title}’을(를) 받지 못했습니다. 인터넷 연결을 확인해 주세요.`, 'error');
+      return null;
+    } finally {
+      alive.current && setBusy((b) => ({ ...b, [t.id]: false }));
+    }
+  };
+  const preview = async (t) => {
+    if (playing === t.id) {
+      libAudio?.pause();
+      return setPlaying(null);
+    }
+    const lt = await ensureLocal(t);
+    if (!lt || !alive.current) return;
+    libAudio?.pause();
+    libAudio = new Audio(mediaUrl(lt.path));
+    libAudio.volume = 0.8;
+    libAudio.onended = () => alive.current && setPlaying(null);
+    libAudio.play().catch(() => {});
+    setPlaying(t.id);
+  };
+  const add = async (t) => {
+    const lt = await ensureLocal(t);
+    if (!lt) return;
+    libAudio?.pause();
+    setPlaying(null);
+    actions.addLibraryTrack(lt);
+  };
+  const fetchOnline = async () => {
+    setFetching(true);
+    const r = await api.musicFetchOnline();
+    if (!alive.current) return;
+    setFetching(false);
+    if (!r.ok) return toast('무료 음악 목록을 받지 못했습니다. 인터넷 연결을 확인해 주세요.', 'error');
+    await load();
+    toast('무료 음악 목록을 받았습니다. 곡을 누르면 내려받아 바로 들어 볼 수 있습니다.');
+  };
+
+  return (
+    <div className="lib">
+      <div className="chip-row tight">
+        <button className={'chip' + (mood === 'all' ? ' on' : '')} onClick={() => setMood('all')}>
+          전체 {lib.tracks.length}
+        </button>
+        {lib.moods.map((m) => {
+          const n = lib.tracks.filter((t) => t.mood === m.id).length;
+          return n ? (
+            <button key={m.id} className={'chip' + (mood === m.id ? ' on' : '')} onClick={() => setMood(m.id)}>
+              {m.name} {n}
+            </button>
+          ) : null;
+        })}
+      </div>
+      {!lib.tracks.length && (
+        <div className="empty-note">
+          설치 파일에 들어 있는 음악이 없습니다.
+          <br />
+          인터넷에 연결되어 있으면 무료 음악을 받을 수 있습니다.
+        </div>
+      )}
+      <div className="lib-list">
+        {list.map((t) => (
+          <div key={t.id} className={'lib-row' + (playing === t.id ? ' playing' : '')}>
+            <button className="lib-play" onClick={() => preview(t)} title={playing === t.id ? '정지' : '미리 듣기'} disabled={busy[t.id]}>
+              {busy[t.id] ? <span className="spin" /> : <Icon name={playing === t.id ? 'pause' : 'play'} size={13} />}
+            </button>
+            <div className="track-name">
+              <b title={t.title}>{t.title}</b>
+              <small>
+                {moodName[t.mood]}
+                {t.duration ? ' · ' + fmtTime(t.duration) : ''}
+                {!t.local ? ' · 받기 필요' : ''}
+              </small>
+            </div>
+            {used.has(t.id) ? (
+              <span className="lib-used">
+                <Icon name="check" size={13} /> 사용 중
+              </span>
+            ) : (
+              <Button icon="plus" size="sm" variant="soft" onClick={() => add(t)} disabled={busy[t.id]}>
+                넣기
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
+      {localCount < 30 && localCount === lib.tracks.length && (
+        <Button icon="music" size="sm" variant="soft" onClick={fetchOnline} disabled={fetching}>
+          {fetching ? '목록 받는 중…' : localCount ? '인터넷에서 무료 음악 더 받기' : '인터넷에서 무료 음악 목록 받기'}
+        </Button>
+      )}
+      <p className="hint small">
+        모든 곡은 <b>CC0(퍼블릭 도메인)</b> 음원(FreePD.com)이라 행사 상영·유튜브·SNS에 출처 표기 없이 쓸 수 있습니다. 영상보다 짧으면 자동으로 반복됩니다.
+      </p>
+    </div>
+  );
+}
+
 export function MusicPanel({ project, update, tl, actions, toast }) {
   const m = project.music;
   const ml = musicLength(m);
@@ -459,9 +740,13 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
   const vratio = tl.total > 0 ? Math.min(1, tl.total / Math.max(ml, tl.total)) : 0;
   return (
     <>
-      <Section title="배경음악" hint="여러 곡을 넣으면 순서대로 자연스럽게 이어집니다 (크로스페이드). MP3·M4A·WAV 지원.">
+      <Section title="무료 음악 고르기" hint="▶로 들어 보고 ‘넣기’를 누르면 바로 영상에 들어갑니다.">
+        <MusicLibrary project={project} actions={actions} toast={toast} />
+      </Section>
+
+      <Section title="배경음악" hint="여러 곡을 넣으면 순서대로 자연스럽게 이어집니다 (크로스페이드). 내 음악 파일(MP3·M4A·WAV)도 넣을 수 있습니다.">
         <Button icon="plus" variant="soft" onClick={actions.addMusic}>
-          음악 파일 추가
+          내 음악 파일 추가
         </Button>
         <div className="track-list">
           {m.tracks.map((t, i) => (

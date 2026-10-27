@@ -16,7 +16,7 @@ function splitKey(key) {
 }
 
 /** EXIF 방향이 반영된 비트맵을 추가로 회전 */
-async function decodeRotated(key, maxWidth = 0) {
+export async function decodeRotated(key, maxWidth = 0) {
   const { path, rot } = splitKey(key);
   const res = await fetch(mediaUrl(path));
   if (!res.ok) throw new Error('HTTP ' + res.status);

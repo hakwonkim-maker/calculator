@@ -5,6 +5,7 @@ import { TRANSITIONS } from '../engine/transitions.js';
 import { setPhotoMeta, usePhotoMeta } from './store.js';
 import { isLowRes, photoDims } from './logic.js';
 import { Icon } from './controls.jsx';
+import { MONTAGE_STYLES } from '../engine/presets.js';
 
 /** 화면에 보일 때만 썸네일을 만든다 (사진 수백 장도 가볍게) */
 function useInView(ref, enabled) {
@@ -49,14 +50,14 @@ export function Thumb({ path, className, rotate = 0, lazy = false, needDims = tr
   return src ? <img className={className} src={src} alt="" draggable={false} /> : <div ref={boxRef} className={className + ' thumb-loading'} />;
 }
 
-const Card = memo(function Card({ item, index, selected, active, onSelect, onDragStart }) {
+const Card = memo(function Card({ item, index, selected, active, onSelect, onDragStart, montage }) {
   const meta = usePhotoMeta(item.type === 'photo' ? item.path : null);
   const low = item.type === 'photo' && isLowRes(item);
   const dims = low ? photoDims(item) : null;
   const bad = meta && (meta.missing || meta.error);
   return (
     <div
-      className={'card' + (selected ? ' selected' : '') + (active ? ' active' : '') + (item.type === 'chapter' ? ' chapter' : '')}
+      className={'card' + (selected ? ' selected' : '') + (active ? ' active' : '') + (item.type === 'chapter' ? ' chapter' : '') + (montage ? ' in-montage' : '') + (item.skip ? ' skipped' : '')}
       draggable
       onDragStart={(e) => onDragStart(e, item.id)}
       onMouseDown={(e) => {
@@ -78,8 +79,11 @@ const Card = memo(function Card({ item, index, selected, active, onSelect, onDra
       )}
       <span className="card-idx">{index}</span>
       {low && <span className="badge warn" title={`원본 ${dims.w}×${dims.h}px`}>저해상도</span>}
+      {item.skip && !bad && <span className="badge skip" title="자동 선별에서 빠진 사진 (속성 창에서 다시 넣기)">제외</span>}
       {bad && <span className="badge err">{meta.missing ? '파일 없음' : '열 수 없음'}</span>}
       {item.motion && item.motion !== 'auto' && <span className="card-flag" title="개별 카메라 움직임">◎</span>}
+      {item.star && <span className="card-star" title="대표 사진 (인트로·엔딩에 먼저 사용)">★</span>}
+      {montage && <span className="card-montage" title={`몽타주 장면(${montage})에 함께 나옵니다`}>{montage}</span>}
       {(item.label || item.caption) && <span className="card-cap">{[item.label, item.caption].filter(Boolean).join(' · ')}</span>}
     </div>
   );
@@ -147,6 +151,8 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
   const [menu, setMenu] = useState(null);
   const scrollRef = useRef(null);
   const segByKey = new Map(tl.segments.map((s) => [s.key, s]));
+  // 사진 id → 그 사진이 나오는 장면 (몽타주로 묶인 사진은 묶음 장면)
+  const segOf = (id) => tl.byItem?.get(id) || segByKey.get(id);
 
   useEffect(() => {
     if (!menu) return undefined;
@@ -216,7 +222,7 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
           </div>
           {items.length > 0 && (
             <TransitionChip
-              resolved={segByKey.get(items[0].id)?.transIn}
+              resolved={segOf(items[0].id)?.transIn}
               itemId="__intro"
               transition={project.intro.transition}
               open={menu === '__intro'}
@@ -228,15 +234,30 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
         </>
       )}
       {items.map((it, i) => {
+        if (it.skip) {
+          return (
+            <React.Fragment key={it.id}>
+              {dropIdx === i && <div className="drop-marker" />}
+              <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')}>
+                <Card item={it} index={'–'} selected={selected.has(it.id)} active={false} onSelect={select} onDragStart={onDragStart} />
+              </div>
+            </React.Fragment>
+          );
+        }
         if (it.type === 'photo') photoNo++;
-        const next = items[i + 1];
-        const nextSeg = next ? segByKey.get(next.id) : project.outro.enabled ? segByKey.get('outro') : null;
+        const next = items.slice(i + 1).find((x) => !x.skip);
+        const mySeg = segOf(it.id);
+        let nextSeg = next ? segOf(next.id) : project.outro.enabled ? segByKey.get('outro') : null;
+        const sameGroup = nextSeg && nextSeg === mySeg; // 같은 몽타주 안의 사진 사이에는 전환이 없음
+        if (sameGroup) nextSeg = null;
+        const grp = mySeg?.type === 'group' ? mySeg : null;
         return (
           <React.Fragment key={it.id}>
             {dropIdx === i && <div className="drop-marker" />}
             <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')} >
-              <Card item={it} index={it.type === 'photo' ? photoNo : '§'} selected={selected.has(it.id)} active={activeKey === it.id} onSelect={select} onDragStart={onDragStart} />
+              <Card item={it} index={it.type === 'photo' ? photoNo : '§'} selected={selected.has(it.id)} active={activeKey === it.id || (grp && activeKey === grp.key)} onSelect={select} onDragStart={onDragStart} montage={grp ? MONTAGE_STYLES[grp.style]?.name : null} />
             </div>
+            {sameGroup && <div className="montage-link" title="몽타주로 한 화면에 함께 나오는 사진" />}
             {nextSeg && (
               <TransitionChip
                 resolved={nextSeg.transIn}

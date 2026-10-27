@@ -195,15 +195,48 @@ export const TRANSITION_STYLES = {
   },
 };
 
+// textAt: 타이틀 글자가 시작되는 시점(배수 k 기준) · photo: 사진이 주인공인 인트로(사진만 보이는 시간 조절 가능)
 export const INTRO_STYLES = {
-  golden: { name: '골든 타이틀', desc: '빛 입자 속 금빛 숫자 · 격식 있는 오프닝' },
-  mosaic: { name: '메모리 모자이크', desc: '사진들이 벽처럼 펼쳐진 뒤 타이틀' },
-  light: { name: '이어온 시간', desc: '연도 카운터가 흐른 뒤 타이틀' },
-  cinematic: { name: '시네마 오프닝', desc: '레터박스가 열리며 영화처럼 시작' },
-  polaroid: { name: '폴라로이드', desc: '인화 사진이 한 장씩 떨어지며 쌓임' },
-  bloom: { name: '플로럴 블룸', desc: '꽃잎과 빛망울이 흩날리는 따뜻한 오프닝' },
-  minimal: { name: '미니멀 라인', desc: '선이 그어지고 글자가 떠오르는 모던 스타일' },
-  filmleader: { name: '필름 카운트다운', desc: '3·2·1 옛날 영사기 카운트다운' },
+  timeroll: { name: '타임 롤', desc: '흑백 사진이 세로로 휘리릭 지나가며 연도가 흐르는 임팩트 오프닝', textAt: 3.4, photo: true, dimmable: true, isNew: true },
+  flashcut: { name: '플래시 컷', desc: '사진이 번쩍이며 빠르게 교차, 큰 글자가 꽂히는 강렬한 오프닝', textAt: 3.2, photo: true, dimmable: true, isNew: true },
+  golden: { name: '골든 타이틀', desc: '빛 입자 속 금빛 숫자 · 격식 있는 오프닝', textAt: 0.5 },
+  mosaic: { name: '메모리 모자이크', desc: '사진들이 벽처럼 펼쳐진 뒤 타이틀', textAt: 2.7, photo: true, dimmable: true },
+  light: { name: '이어온 시간', desc: '연도 카운터가 흐른 뒤 타이틀', textAt: 3.0 },
+  cinematic: { name: '시네마 오프닝', desc: '레터박스가 열리며 영화처럼 시작', textAt: 1.0, photo: true, dimmable: true },
+  polaroid: { name: '폴라로이드', desc: '인화 사진이 한 장씩 떨어지며 쌓임', textAt: 2.46, photo: true, dimmable: true },
+  bloom: { name: '플로럴 블룸', desc: '꽃잎과 빛망울이 흩날리는 따뜻한 오프닝', textAt: 0.6 },
+  minimal: { name: '미니멀 라인', desc: '선이 그어지고 글자가 떠오르는 모던 스타일', textAt: 0.3 },
+  filmleader: { name: '필름 카운트다운', desc: '3·2·1 옛날 영사기 카운트다운', textAt: 3.6 },
+};
+
+export const INTRO_TEXT_SPEED = { slow: 1.3, normal: 1, fast: 0.75 };
+
+/**
+ * 인트로 타이밍 (미리보기·출력·타임라인 공용)
+ * k: 애니메이션 속도 배수 · s: 타이틀 시작 시각 · required: 글자가 다 보이고 읽힐 때까지 필요한 길이
+ */
+export function introTiming(intro, dur) {
+  const meta = INTRO_STYLES[intro.style] || INTRO_STYLES.golden;
+  const base = Math.min(1.5, Math.max(0.55, ((Number(intro.duration) || dur) - 2.4) / 7.6));
+  const k = base * (INTRO_TEXT_SPEED[intro.textSpeed] || 1);
+  const pp = meta.photo ? Math.min(3, Math.max(0.4, Number(intro.photoPhase) || 1)) : 1;
+  const s = meta.textAt * k * pp;
+  const required = s + 5.2 * k + 2.4;
+  return { k, pp, s, required, dim: intro.dim == null ? null : Number(intro.dim) };
+}
+
+// 몽타주(중간 연출) — 사진 여러 장을 한 화면에 모아 보여주는 장면
+export const MONTAGE_STYLES = {
+  grid: { name: '모자이크 그리드', size: [4, 6] },
+  polaroid: { name: '폴라로이드', size: [4, 5] },
+  split: { name: '분할 패널', size: [3, 3] },
+  filmstrip: { name: '필름 스트립', size: [5, 6] },
+};
+export const MONTAGE_FREQ = {
+  off: { name: '끄기' },
+  few: { name: '가끔', gap: [12, 16] },
+  normal: { name: '보통', gap: [7, 10] },
+  many: { name: '자주', gap: [4, 6] },
 };
 
 export const OUTRO_STYLES = {
@@ -280,7 +313,7 @@ export function defaultProject() {
       credits: '',
       logo: '',
     },
-    intro: { enabled: true, style: 'golden', duration: 10 },
+    intro: { enabled: true, style: 'golden', duration: 10, photoPhase: 1, textSpeed: 'normal', dim: null },
     outro: { enabled: true, style: 'gallery', duration: 10 },
     style: {
       theme: 'noir',
@@ -300,6 +333,8 @@ export function defaultProject() {
       watermark: false,
       watermarkPos: 'tr',
       seed: 1,
+      montage: 'normal',
+      folderLabel: 'off',
     },
     music: { tracks: [], volume: 0.9, fadeIn: 1.5, fadeOut: 5, crossfade: 3, loop: true },
     output: { aspect: '16:9', resolution: '1080p', fps: 30, quality: 'high', encoder: 'auto', path: '' },

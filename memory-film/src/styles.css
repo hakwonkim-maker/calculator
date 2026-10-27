@@ -365,7 +365,7 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
 .pcard-img { position: relative; display: block; aspect-ratio: 16 / 9; border-radius: 7px; overflow: hidden; background: #000; margin-bottom: 4px; }
 .pcard-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pcard-check { position: absolute; right: 6px; top: 6px; width: 22px; height: 22px; border-radius: 50%; background: var(--gold); color: var(--gold-ink); display: grid; place-items: center; box-shadow: 0 2px 8px #0008; }
-.pcard-badge { position: absolute; left: 6px; top: 6px; font-size: 10px; padding: 2px 6px; border-radius: 5px; background: #000a; }
+.pcard-badge { position: absolute; left: 6px; top: 6px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 5px; background: var(--gold); color: #1d1606; }
 .pcard b { font-size: 12.5px; padding: 0 2px; }
 .pcard small { font-size: 11px; color: var(--dim); line-height: 1.4; padding: 0 2px; }
 .tpl-modal { width: min(1080px, 94vw); max-height: 90vh; overflow: hidden; }
@@ -424,3 +424,41 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
 .filmstrip.compact .tchip-name { display: none; }
 .filmstrip.compact .card-cap, .filmstrip.compact .badge { font-size: 9px; }
 .filmstrip.compact .card-chapter b { font-size: 15px; }
+
+/* 몽타주로 묶인 사진 */
+.montage-link { flex-shrink: 0; width: 14px; height: 3px; background: linear-gradient(90deg, #8fb7d9aa, #8fb7d9); border-radius: 2px; }
+.card.in-montage { box-shadow: 0 0 0 1px #8fb7d966; }
+.card.in-montage.selected { box-shadow: 0 0 0 2px var(--gold); }
+.card-montage { position: absolute; left: 6px; bottom: 6px; font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 5px; background: #8fb7d9; color: #0b1a26; max-width: calc(100% - 40px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-star { position: absolute; right: 7px; bottom: 5px; font-size: 13px; color: var(--gold); text-shadow: 0 0 5px #000; }
+.card-flag + .card-star { right: 22px; }
+.filmstrip.compact .card-montage { font-size: 8px; padding: 1px 4px; }
+.filmstrip.compact .montage-link { width: 8px; }
+.insp-flags { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.confirm-modal { width: 500px; }
+.intro-tune { display: flex; flex-direction: column; gap: 10px; padding: 12px; margin: 4px 0 2px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff05; }
+.intro-tune-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; }
+.hint.small.accent { color: var(--gold); }
+.hint .link { font-size: inherit; display: inline; }
+/* 무료 음악 라이브러리 */
+.lib { display: flex; flex-direction: column; gap: 10px; }
+.lib-list { display: flex; flex-direction: column; gap: 3px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
+.lib-row { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 6px; border-radius: 8px; border: 1px solid transparent; }
+.lib-row:hover { background: var(--bg); border-color: var(--line); }
+.lib-row.playing { background: #d9b8671a; border-color: #d9b86755; }
+.lib-play { width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%; border: 1px solid var(--line2); background: var(--bg); color: var(--gold); display: grid; place-items: center; }
+.lib-play:hover { border-color: var(--gold); }
+.lib-used { font-size: 11.5px; color: var(--gold); display: flex; align-items: center; gap: 3px; padding: 0 6px; white-space: nowrap; }
+.spin { width: 12px; height: 12px; border: 2px solid #d9b86744; border-top-color: var(--gold); border-radius: 50%; animation: spin 0.8s linear infinite; }
+/* 자동 사진 선별 */
+.autosel { display: flex; flex-direction: column; gap: 9px; padding: 12px; border-radius: 10px; border: 1px solid #d9b86744; background: linear-gradient(180deg, #d9b86710, transparent); }
+.autosel-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.autosel-head b { display: flex; align-items: center; gap: 6px; color: var(--gold); }
+.autosel-state { font-size: 11.5px; color: var(--muted); }
+.autosel-plan { font-size: 12.5px; color: var(--text); font-weight: 600; }
+.card.skipped { opacity: 0.32; filter: grayscale(0.85); }
+.card.skipped:hover, .card.skipped.selected { opacity: 0.75; }
+.badge.skip { background: #555; color: #eee; }
+.busy-modal { width: 420px; align-items: stretch; }
+.busy-bar { height: 6px; border-radius: 3px; background: var(--bg); overflow: hidden; }
+.busy-bar i { display: block; height: 100%; background: var(--gold); transition: width 0.2s; }

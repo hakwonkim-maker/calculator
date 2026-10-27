@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld('mfApi', {
   exportFrame: (data) => ipcRenderer.invoke('export:frame', data),
   exportFinish: () => ipcRenderer.invoke('export:finish'),
   exportCancel: () => ipcRenderer.invoke('export:cancel'),
+  photoDates: (paths) => ipcRenderer.invoke('photos:dates', paths),
+  musicLibrary: () => ipcRenderer.invoke('music:library'),
+  musicFetchOnline: () => ipcRenderer.invoke('music:fetchOnline'),
+  musicDownload: (id) => ipcRenderer.invoke('music:download', id),
   pathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file);

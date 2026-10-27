@@ -39,7 +39,8 @@ export function importWebFiles(files) {
       continue;
     }
     if (!f.type.startsWith('image/')) continue;
-    items.push({ id: newId('p'), type: 'photo', path: URL.createObjectURL(f), name: f.name, date: f.lastModified, dateSource: 'file', caption: '', label: '' });
+    const rel = (f.webkitRelativePath || '').split('/');
+    items.push({ id: newId('p'), type: 'photo', path: URL.createObjectURL(f), name: f.name, folder: rel.length > 1 ? rel[rel.length - 2] : '', date: f.lastModified, dateSource: 'file', caption: '', label: '' });
   }
   return { items, skipped };
 }
@@ -107,13 +108,16 @@ export function yearOf(it) {
   return new Date(it.date).getFullYear();
 }
 
+/** 연도를 믿을 수 있는 사진: EXIF 촬영일 또는 파일·폴더 이름에 적힌 날짜/연도 */
+export const hasKnownYear = (it) => it.type === 'photo' && (it.dateSource === 'exif' || it.dateSource === 'name' || it.dateSource === 'folder');
+
 /** 촬영 연도가 바뀌는 지점마다 챕터 카드 자동 생성 (기존 자동 챕터는 교체) */
 export function autoChapters(project) {
   const items = project.items.filter((i) => !(i.type === 'chapter' && i.auto));
   const out = [];
   let lastYear = null;
   for (const it of items) {
-    if (it.type === 'photo' && it.dateSource === 'exif') {
+    if (hasKnownYear(it)) {
       const y = yearOf(it);
       if (y && y !== lastYear) {
         out.push({ id: newId('c'), type: 'chapter', title: String(y), subtitle: '', auto: true });
@@ -128,7 +132,7 @@ export function autoChapters(project) {
 export function autoYearLabels(project, overwrite = false) {
   let n = 0;
   const items = project.items.map((it) => {
-    if (it.type !== 'photo' || it.dateSource !== 'exif') return it;
+    if (!hasKnownYear(it)) return it;
     if (it.label && !overwrite) return it;
     n++;
     return { ...it, label: String(yearOf(it)) };

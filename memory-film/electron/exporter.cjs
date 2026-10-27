@@ -215,4 +215,4 @@ class Exporter {
   }
 }
 
-module.exports = { Exporter, buildAudio, detectEncoders, ENCODER_LABEL };
+module.exports = { Exporter, buildAudio, detectEncoders, ENCODER_LABEL, ffmpegPath };

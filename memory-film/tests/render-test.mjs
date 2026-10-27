@@ -11,8 +11,9 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const out = path.join(root, 'out');
 fs.mkdirSync(out, { recursive: true });
-const fx = (n) => '/@fs' + path.join(root, 'fixtures', n);
-const photos = fs.readdirSync(path.join(root, 'fixtures')).filter((f) => f.endsWith('.jpg')).sort();
+const FIX = process.env.FIX || 'fixtures';
+const fx = (n) => '/@fs' + path.join(root, FIX, n);
+const photos = fs.readdirSync(path.join(root, FIX)).filter((f) => f.endsWith('.jpg')).sort().slice(0, +(process.env.N || 999));
 
 const scenario = process.argv[2] || 'golden';
 const times = (process.argv[3] || '').split(',').filter(Boolean).map(Number);
@@ -20,7 +21,8 @@ const times = (process.argv[3] || '').split(',').filter(Boolean).map(Number);
 const items = [];
 photos.forEach((p, i) => {
   if (i === 2) items.push({ id: 'ch1', type: 'chapter', title: '1996', subtitle: '작은 시작, 큰 꿈' });
-  items.push({ id: 'p' + i, type: 'photo', path: fx(p), caption: i === 0 ? '창립 기념식 · 서울 본사' : '', label: i === 0 ? '1996' : '' });
+  const folder = process.env.FOLDERS ? ['01_1996 창립', '2005_사옥 이전', '3. 2019 체육대회'][Math.floor((i * 3) / photos.length)] : undefined;
+  items.push({ id: 'p' + i, type: 'photo', path: fx(p), folder, caption: i === 0 ? '창립 기념식 · 서울 본사' : '', label: i === 0 ? '1996' : '' });
 });
 
 const base = {
@@ -38,6 +40,10 @@ const scenarios = {
   minimal: { intro: { style: 'minimal', duration: 10 }, style: { theme: 'sky', typography: 'playful', captionPos: 'center', watermark: true } },
   leader: { intro: { style: 'filmleader', duration: 11 }, style: { theme: 'ivory', typography: 'warm' } },
   vertical: { intro: { style: 'golden', duration: 10 }, style: { theme: 'noir', typography: 'classic', captionPos: 'center' }, w: 1080, h: 1920 },
+  timeroll: { intro: { style: 'timeroll', duration: 10 }, style: { theme: 'noir', typography: 'classic', montage: 'many' } },
+  flashcut: { intro: { style: 'flashcut', duration: 10 }, style: { theme: 'navy', typography: 'modern', montage: 'many' } },
+  timerollIvory: { intro: { style: 'timeroll', duration: 10, photoPhase: 1.6 }, style: { theme: 'ivory', typography: 'warm' } },
+  montage: { intro: { style: 'golden', duration: 10 }, style: { theme: 'noir', typography: 'classic', montage: 'many', folderLabel: 'all' }, transitionStyle: 'elegant' },
   square: { intro: { style: 'mosaic', duration: 10 }, style: { theme: 'navy', typography: 'modern' }, w: 1080, h: 1080 },
 };
 const sc = scenarios[scenario];

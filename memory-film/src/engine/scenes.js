@@ -9,6 +9,8 @@ import {
 } from './draw.js';
 import { prog, clamp, lerp, easeOutCubic, easeInOutSine, easeOutQuart, easeInOutCubic, inOut, rng, hashStr } from './math.js';
 import { itemKey } from './assets.js';
+import { introTiming } from './presets.js';
+import { drawMontage } from './montage.js';
 
 export function drawSegment(ctx, seg, tau, env) {
   ctx.save();
@@ -24,6 +26,10 @@ export function drawSegment(ctx, seg, tau, env) {
       break;
     case 'photo':
       drawPhoto(ctx, seg, tau, env);
+      break;
+    case 'group':
+      drawMontage(ctx, seg, tau, env);
+      if (seg.folder) drawFolderTag(ctx, seg, tau, env);
       break;
     case 'chapter':
       drawChapter(ctx, seg, tau, env);
@@ -41,7 +47,7 @@ export function drawSegment(ctx, seg, tau, env) {
 /** 색보정(룩) 적용 정도: 사진 장면만 1 */
 export function lookAmountFor(seg) {
   if (!seg) return 0;
-  if (seg.type === 'photo') return 1;
+  if (seg.type === 'photo' || seg.type === 'group') return 1;
   if (seg.type === 'chapter') return 0.35;
   return 0;
 }
@@ -52,6 +58,11 @@ export function lookAmountFor(seg) {
 function drawLockup(ctx, env, tau, s, k, opts = {}) {
   ctx.save();
   ctx.translate(0, env.oy);
+  // 어두운 사진 위에 쓰는 인트로: 밝은 테마여도 밝은 글자·금색으로
+  if (opts.darkBg && !env.theme.dark) {
+    const ca = captionAccent(env.theme);
+    env = { ...env, theme: { ...env.theme, dark: true, text: '#fbf8f1', textDim: 'rgba(251,248,241,0.75)', accent: ca.accent, accentSolid: ca.solid, particle: '#f0cf82' } };
+  }
   drawLockupBody(ctx, env, tau, s, k, opts);
   ctx.restore();
 }
@@ -240,7 +251,8 @@ function drawLockupBody(ctx, env, tau, s, k, opts = {}) {
 }
 
 /** 인트로 길이에 맞춰 애니메이션 속도 조절 */
-const introK = (dur) => clamp((dur - 2.4) / 7.6, 0.55, 1.5);
+/** 인트로 타이밍: 길이·글자 속도·사진만 보이는 시간 설정 반영 */
+const introT = (env, seg) => introTiming(env.project.intro, seg.dur);
 
 // =====================================================================
 // 인트로
@@ -255,6 +267,8 @@ function drawIntro(ctx, seg, tau, env) {
     bloom: drawIntroBloom,
     minimal: drawIntroMinimal,
     filmleader: drawIntroFilmLeader,
+    timeroll: drawIntroTimeRoll,
+    flashcut: drawIntroFlashCut,
   }[style] || drawIntroGolden;
   fn(ctx, seg, tau, env);
 }
@@ -320,20 +334,22 @@ function pushIn(ctx, env, tau, dur, amt = 0.04) {
 
 function drawIntroGolden(ctx, seg, tau, env) {
   const { W, H, theme } = env;
-  const k = introK(seg.dur);
+  const IT = introT(env, seg);
+  const k = IT.k;
   drawThemeBackground(ctx, W, H, theme, tau, 1.3);
   drawRays(ctx, env, tau, easeOutCubic(prog(tau, 0.2, 3)));
   drawBokeh(ctx, W, H, tau + 4, { seed: 'gold', discs: 30, sparks: 70, color: theme.particle, alpha: easeOutCubic(prog(tau, 0, 2.6)) * (theme.dark ? 1 : 0.6) });
   ctx.save();
   pushIn(ctx, env, tau, seg.dur, 0.035);
-  drawLockup(ctx, env, tau, 0.5 * k, k);
+  drawLockup(ctx, env, tau, IT.s, k);
   ctx.restore();
   blackFadeIn(ctx, env, tau, 1.2);
 }
 
 function drawIntroMosaic(ctx, seg, tau, env) {
   const { W, H, u, theme, tl } = env;
-  const k = introK(seg.dur);
+  const IT = introT(env, seg);
+  const k = IT.k;
   ctx.fillStyle = theme.bg[0];
   ctx.fillRect(0, 0, W, H);
   const photos = tl.gallery;
@@ -383,13 +399,14 @@ function drawIntroMosaic(ctx, seg, tau, env) {
     }
   }
   L.restore();
-  const dim = easeInOutSine(prog(tau, 2.2 * k, 3.6 * k));
+  const dim = easeInOutSine(prog(tau, IT.s - 0.5 * k, IT.s + 0.9 * k));
+  const dimA = IT.dim == null ? 0.62 : IT.dim;
   if (dim > 0.01) drawDownBlurred(ctx, env.layer, W, H, 5 * u * dim + 2, 3);
   else ctx.drawImage(env.layer, 0, 0);
   // 텍스트 가독성 확보용 오버레이
   ctx.save();
   ctx.globalAlpha = dim;
-  ctx.fillStyle = theme.dark ? theme.scrim + '0.62)' : rgba(theme.bg[0], 0.8);
+  ctx.fillStyle = theme.dark ? theme.scrim + dimA + ')' : rgba(theme.bg[0], Math.min(0.95, dimA + 0.18));
   ctx.fillRect(0, 0, W, H);
   const rg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.55);
   rg.addColorStop(0, theme.dark ? theme.scrim + '0.55)' : rgba(theme.bg[0], 0.6));
@@ -400,7 +417,7 @@ function drawIntroMosaic(ctx, seg, tau, env) {
   drawBokeh(ctx, W, H, tau, { seed: 'mos', discs: 14, sparks: 40, color: theme.particle, alpha: dim * (theme.dark ? 0.9 : 0.5) });
   ctx.save();
   pushIn(ctx, env, tau, seg.dur, 0.025);
-  drawLockup(ctx, env, tau, 2.7 * k, k, { onPhoto: theme.dark });
+  drawLockup(ctx, env, tau, IT.s, k, { onPhoto: theme.dark });
   ctx.restore();
   blackFadeIn(ctx, env, tau, 0.9);
 }
@@ -408,7 +425,8 @@ function drawIntroMosaic(ctx, seg, tau, env) {
 /** 연도 카운터 인트로: 1996 → 2026 롤링 숫자 후 타이틀 */
 function drawIntroCounter(ctx, seg, tau, env) {
   const { W, H, u, theme, typo, project } = env;
-  const k = introK(seg.dur);
+  const IT = introT(env, seg);
+  const k = IT.k;
   const tx = project.text;
   drawThemeBackground(ctx, W, H, theme, tau, 1);
   drawBokeh(ctx, W, H, tau, { seed: 'cnt', discs: 18, sparks: 30, color: theme.particle, alpha: 0.6 });
@@ -616,7 +634,54 @@ function drawPhoto(ctx, seg, tau, env) {
   }
 
   if ((it.caption && it.caption.trim()) || (it.label && it.label.trim())) drawCaption(ctx, seg, tau, env);
+  if (seg.folder) drawFolderTag(ctx, seg, tau, env);
   drawWatermark(ctx, env);
+}
+
+/** 폴더명 태그: 왼쪽 위 작은 금색 선 + 글자 (워터마크가 왼쪽 위면 오른쪽 위) */
+function drawFolderTag(ctx, seg, tau, env) {
+  const { W, H, u, typo } = env;
+  const inS = seg.tIn * 0.7 + 0.1;
+  const outE = seg.dur - seg.tOut * 0.6;
+  const a = inOut(tau, inS, inS + 0.8, Math.max(inS + 0.9, outE - 0.6), outE);
+  if (a <= 0.001) return;
+  const right = env.project.style.watermark && (env.project.style.watermarkPos || 'tr') === 'tl';
+  const key = `folder|${seg.folder}|${W}x${H}|${typo.body.family}|${right}`;
+  let tag = env.cache.get(key);
+  if (!tag) {
+    const size = 30 * u;
+    const pad = 64 * u;
+    const c = new OffscreenCanvas(W, Math.ceil(170 * u));
+    const g = c.getContext('2d');
+    // 밝은 사진 위에서도 읽히도록 모서리 쪽을 살짝 어둡게 (가로로 늘린 원형 그라데이션 → 경계선 없음)
+    const ch = c.height;
+    g.save();
+    g.translate(right ? W : 0, 0);
+    g.scale(3.4, 1);
+    const rg = g.createRadialGradient(0, 0, 0, 0, 0, ch);
+    rg.addColorStop(0, 'rgba(0,0,0,0.42)');
+    rg.addColorStop(0.6, 'rgba(0,0,0,0.16)');
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg;
+    g.fillRect(-ch, 0, ch * 2, ch);
+    g.restore();
+    setFont(g, typo.body, size, Math.max(600, typo.body.weight));
+    g.shadowColor = 'rgba(0,0,0,0.6)';
+    g.shadowBlur = 10 * u;
+    const tw = Math.min(W * 0.6, measureTracked(g, seg.folder, size * 0.04));
+    const bx = right ? W - pad - tw - 18 * u : pad;
+    g.fillStyle = env.darkAccentSolid;
+    g.fillRect(bx, 56 * u, Math.max(1, 3 * u), 36 * u);
+    g.fillStyle = '#fbf7ee';
+    g.textBaseline = 'middle';
+    drawTracked(g, seg.folder, bx + 18 * u, 74 * u, size * 0.04, 'left');
+    tag = c.transferToImageBitmap();
+    env.cache.set(key, tag);
+  }
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.drawImage(tag, (1 - easeOutCubic(clamp((tau - inS) / 0.9))) * (right ? 14 : -14) * u, 0);
+  ctx.restore();
 }
 
 /** 로고/기관명 워터마크 (사진·챕터 장면 구석에 상시 표시) */
@@ -1001,9 +1066,11 @@ function fadeToBlack(ctx, env, tau, dur) {
 /** 시네마 오프닝: 레터박스가 열리고, 첫 사진 위에 넓은 자간 타이틀 */
 function drawIntroCinematic(ctx, seg, tau, env) {
   const { W, H, u, theme, typo, project, tl } = env;
-  const k = introK(seg.dur);
+  const IT = introT(env, seg);
+  const k = IT.k;
   const tx = project.text;
   const p = clamp(tau / seg.dur);
+  const tt = tau - (IT.s - 1.0 * k); // 글자 시작을 '사진만 보이는 시간'만큼 늦춤
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
   const ph = tl.gallery[0];
@@ -1033,9 +1100,10 @@ function drawIntroCinematic(ctx, seg, tau, env) {
     drawThemeBackground(ctx, W, H, { ...theme, bg: theme.dark ? theme.bg : ['#07070a', '#1a1a22'] }, tau, 0.6);
   }
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, 'rgba(0,0,0,0.55)');
-  g.addColorStop(0.5, 'rgba(0,0,0,0.12)');
-  g.addColorStop(1, 'rgba(0,0,0,0.65)');
+  const dm = IT.dim == null ? 1 : IT.dim / 0.55;
+  g.addColorStop(0, `rgba(0,0,0,${Math.min(0.95, 0.55 * dm)})`);
+  g.addColorStop(0.5, `rgba(0,0,0,${Math.min(0.9, 0.12 * dm)})`);
+  g.addColorStop(1, `rgba(0,0,0,${Math.min(0.95, 0.65 * dm)})`);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
   drawBokeh(ctx, W, H, tau, { seed: 'cine', discs: 8, sparks: 26, color: theme.dark ? theme.particle : '#f0cf82', alpha: 0.5 });
@@ -1046,7 +1114,7 @@ function drawIntroCinematic(ctx, seg, tau, env) {
     const size = fitFontSize(ctx, typo.display, tx.number, 560 * u, W * 0.95);
     setFont(ctx, typo.display, size);
     ctx.save();
-    ctx.globalAlpha = 0.16 * easeOutCubic(prog(tau, 0.8 * k, 3.2 * k));
+    ctx.globalAlpha = 0.16 * easeOutCubic(prog(tt, 0.8 * k, 3.2 * k));
     ctx.strokeStyle = gold.accentSolid;
     ctx.lineWidth = Math.max(1, 1.6 * u);
     const sc = lerp(1.08, 1, easeOutCubic(p));
@@ -1062,7 +1130,7 @@ function drawIntroCinematic(ctx, seg, tau, env) {
   const cx = W / 2;
   if (tx.eyebrow) {
     const size = fitFontSize(ctx, typo.eyebrow, tx.eyebrow, 30 * u, W * 0.7, 0.5);
-    const a1 = easeOutCubic(prog(tau, 1.0 * k, 2.2 * k));
+    const a1 = easeOutCubic(prog(tt, 1.0 * k, 2.2 * k));
     setFont(ctx, typo.eyebrow, size);
     ctx.globalAlpha = a1;
     ctx.fillStyle = gold.accentSolid;
@@ -1070,11 +1138,11 @@ function drawIntroCinematic(ctx, seg, tau, env) {
   }
   if (tx.title) {
     const size = fitFontSize(ctx, typo.title, tx.title, 94 * u, W * 0.86, 0.08);
-    const a2 = easeOutCubic(prog(tau, 1.5 * k, 3.0 * k));
+    const a2 = easeOutCubic(prog(tt, 1.5 * k, 3.0 * k));
     setFont(ctx, typo.title, size);
     ctx.save();
     ctx.globalAlpha = a2;
-    const trk2 = size * lerp(0.3, 0.06, easeOutQuart(prog(tau, 1.5 * k, 4.5 * k)));
+    const trk2 = size * lerp(0.3, 0.06, easeOutQuart(prog(tt, 1.5 * k, 4.5 * k)));
     const tw2 = measureTracked(ctx, tx.title, trk2);
     withBlur(ctx, a2 < 1 ? 10 * u * (1 - a2) : 0, cx - tw2 / 2 - 50 * u, 575 * u - size - 40 * u, tw2 + 100 * u, size * 1.4 + 80 * u, (g) => {
       setFont(g, typo.title, size);
@@ -1085,14 +1153,14 @@ function drawIntroCinematic(ctx, seg, tau, env) {
     });
     ctx.restore();
   }
-  const lg = easeInOutCubic(prog(tau, 2.6 * k, 3.8 * k));
+  const lg = easeInOutCubic(prog(tt, 2.6 * k, 3.8 * k));
   if (lg > 0) {
     ctx.globalAlpha = 0.9;
     ctx.fillStyle = gold.accentSolid;
     ctx.fillRect(cx - 130 * u * lg, 622 * u, 260 * u * lg, Math.max(1, 1.5 * u));
   }
   if (tx.subtitle) {
-    const a3 = easeOutCubic(prog(tau, 3.1 * k, 4.2 * k));
+    const a3 = easeOutCubic(prog(tt, 3.1 * k, 4.2 * k));
     const size = fitFontSize(ctx, typo.display, tx.subtitle, 32 * u, W * 0.7, 0.3);
     setFont(ctx, typo.display, size);
     ctx.globalAlpha = a3;
@@ -1100,7 +1168,7 @@ function drawIntroCinematic(ctx, seg, tau, env) {
     drawTracked(ctx, tx.subtitle, cx, 685 * u, size * 0.3);
   }
   if (tx.org) {
-    const a4 = easeOutCubic(prog(tau, 3.6 * k, 4.7 * k));
+    const a4 = easeOutCubic(prog(tt, 3.6 * k, 4.7 * k));
     const size = fitFontSize(ctx, typo.body, tx.org, 28 * u, W * 0.7, 0.15);
     setFont(ctx, typo.body, size);
     ctx.globalAlpha = a4;
@@ -1121,7 +1189,8 @@ function drawIntroCinematic(ctx, seg, tau, env) {
 /** 폴라로이드: 인화 사진이 차례로 떨어져 쌓인 뒤 타이틀 */
 function drawIntroPolaroid(ctx, seg, tau, env) {
   const { W, H, u, theme, tl } = env;
-  const k = introK(seg.dur);
+  const IT = introT(env, seg);
+  const k = IT.k;
   drawThemeBackground(ctx, W, H, theme, tau, 0.7);
   const photos = tl.gallery;
   const n = 7;
@@ -1143,7 +1212,7 @@ function drawIntroPolaroid(ctx, seg, tau, env) {
     const cx = W / 2 + Math.cos(ang) * rx * (0.9 + r() * 0.2);
     const cy = H / 2 + Math.sin(ang) * ry * (0.9 + r() * 0.2);
     const rot = (r() - 0.5) * 0.5;
-    const t0 = (0.2 + i * 0.4) * k;
+    const t0 = (0.2 + i * 0.4) * k * IT.pp;
     const e = prog(tau, t0, t0 + 0.75);
     if (e <= 0) continue;
     const land = easeOutCubic(e);
@@ -1184,8 +1253,8 @@ function drawIntroPolaroid(ctx, seg, tau, env) {
   }
   ctx.restore();
   // 중앙 타이틀 영역
-  const s = (0.2 + n * 0.4) * k * 0.82;
-  const panel = easeInOutSine(prog(tau, s - 0.4, s + 0.8));
+  const s = IT.s;
+  const panel = easeInOutSine(prog(tau, s - 0.4, s + 0.8)) * Math.min(1, (IT.dim == null ? 0.62 : IT.dim) / 0.62);
   if (panel > 0) {
     ctx.save();
     ctx.globalAlpha = panel;
@@ -1208,7 +1277,8 @@ function drift(i, p) {
 /** 플로럴 블룸: 부드러운 색 번짐 + 흩날리는 꽃잎 */
 function drawIntroBloom(ctx, seg, tau, env) {
   const { W, H, u, theme } = env;
-  const k = introK(seg.dur);
+  const IT = introT(env, seg);
+  const k = IT.k;
   drawThemeBackground(ctx, W, H, theme, tau, 1.1);
   const S = Math.max(W, H);
   ctx.save();
@@ -1273,7 +1343,8 @@ function drawPetals(ctx, env, t, count, alpha) {
 /** 미니멀 라인: 가로선이 그어지고 글자가 선 위/아래로 솟아남 */
 function drawIntroMinimal(ctx, seg, tau, env) {
   const { W, H, u, theme, typo, project } = env;
-  const k = introK(seg.dur);
+  const IT = introT(env, seg);
+  const k = IT.k;
   const tx = project.text;
   drawThemeBackground(ctx, W, H, theme, tau, 0.35);
   const cx = W / 2;
@@ -1353,7 +1424,8 @@ function drawIntroMinimal(ctx, seg, tau, env) {
 /** 필름 카운트다운: 3·2·1 영사기 리더 → 섬광 → 타이틀 */
 function drawIntroFilmLeader(ctx, seg, tau, env) {
   const { W, H, u, theme, typo } = env;
-  const k = introK(seg.dur);
+  const IT = introT(env, seg);
+  const k = IT.k;
   const cd = 3.3 * Math.min(1, k);
   if (tau < cd) {
     const frame = Math.floor(tau * 24);
@@ -1546,6 +1618,231 @@ function drawOutroCredits(ctx, seg, tau, env) {
     ctx.restore();
   }
   fadeToBlack(ctx, env, tau, seg.dur);
+}
+
+// =====================================================================
+// 임팩트 인트로 2종
+// =====================================================================
+
+/** 흑백 썸네일 (한 번만 만들어 캐시) */
+function grayThumb(env, ph) {
+  const a = env.assets.getThumb(itemKey(ph));
+  if (!a || a.failed) return null;
+  const key = `gray|${itemKey(ph)}|${a.w}`;
+  let g = env.cache.get(key);
+  if (!g) {
+    const c = new OffscreenCanvas(a.w, a.h);
+    const x = c.getContext('2d');
+    x.filter = 'grayscale(1) contrast(1.15) brightness(0.92)';
+    x.drawImage(a.img, 0, 0);
+    g = { img: c.transferToImageBitmap(), w: a.w, h: a.h };
+    env.cache.set(key, g);
+  }
+  return g;
+}
+
+/** 타임 롤: 흑백 사진 기둥이 세로로 빠르게 흐르며 연도가 올라가고, 멈추는 순간 색이 돌아오며 타이틀 */
+function drawIntroTimeRoll(ctx, seg, tau, env) {
+  const { W, H, u, theme, typo, project, tl } = env;
+  const IT = introT(env, seg);
+  const k = IT.k;
+  const s = IT.s;
+  const tx = project.text;
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, W, H);
+  const photos = tl.gallery;
+  const rushEnd = Math.max(0.8, s - 0.15 * k);
+  const p = clamp(tau / rushEnd);
+  const D = H * 9 * Math.max(0.6, IT.pp);
+  const offset = D * easeOutCubic(p) + 30 * u * tau;
+  const vel = (D * 3 * Math.pow(1 - p, 2)) / rushEnd; // px/s
+  const blurLen = Math.min(H * 0.25, vel / 30);
+  const color = easeOutCubic(prog(tau, s - 0.1 * k, s + 1.4 * k));
+  if (photos.length) {
+    const cols = W >= H ? 5 : 3;
+    const gap = 10 * u;
+    const colW = (W - gap * (cols + 1)) / cols;
+    const tileH = colW * 0.78;
+    const step = tileH + gap;
+    for (let c = 0; c < cols; c++) {
+      const dir = c % 2 ? 1 : -1;
+      const speed = 0.85 + 0.12 * ((c * 37) % 3);
+      const off = offset * speed * dir;
+      const x = gap + c * (colW + gap);
+      const first = Math.floor(-off / step) - 1;
+      for (let j = first; j * step + off < H + step; j++) {
+        const y = j * step + off;
+        if (y + tileH < -blurLen || y > H + blurLen) continue;
+        const ph = photos[(((j + c * 7) % photos.length) + photos.length) % photos.length];
+        const gimg = grayThumb(env, ph);
+        const cimg = env.assets.getThumb(itemKey(ph));
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, Math.max(-blurLen, y - blurLen / 2), colW, tileH + blurLen);
+        ctx.clip();
+        if (gimg) {
+          if (blurLen > 4 * u) {
+            // 빠를 때는 세로 잔상(모션 블러)
+            for (const [o, al] of [[-0.5, 0.35], [0, 0.5], [0.5, 0.35]]) {
+              ctx.globalAlpha = al;
+              drawCover(ctx, gimg.img, gimg.w, gimg.h, x, y + o * blurLen, colW, tileH);
+            }
+            ctx.globalAlpha = 1;
+          } else drawCover(ctx, gimg.img, gimg.w, gimg.h, x, y, colW, tileH);
+          if (color > 0.01 && cimg && !cimg.failed) {
+            ctx.globalAlpha = color * 0.9;
+            drawCover(ctx, cimg.img, cimg.w, cimg.h, x, y, colW, tileH);
+            ctx.globalAlpha = 1;
+          }
+        } else {
+          ctx.fillStyle = '#222';
+          ctx.fillRect(x, y, colW, tileH);
+        }
+        ctx.restore();
+      }
+    }
+  }
+  // 글자를 위한 어둡게 (빠르게 흐를 때는 약하게)
+  const dimA = IT.dim == null ? 0.62 : IT.dim;
+  ctx.fillStyle = `rgba(0,0,0,${lerp(0.3, dimA, easeInOutSine(prog(tau, s - 0.8 * k, s + 0.5 * k))).toFixed(3)})`;
+  ctx.fillRect(0, 0, W, H);
+  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.2, W / 2, H / 2, Math.hypot(W, H) * 0.6);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.7)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+
+  // 흐르는 연도 카운터
+  const y0 = parseInt(tx.startYear, 10);
+  const y1 = parseInt(tx.endYear, 10);
+  const valid = isFinite(y0) && isFinite(y1) && y1 > y0 && y1 - y0 < 500;
+  const ca = easeOutCubic(prog(tau, 0.15, 0.6)) * (1 - easeInOutSine(prog(tau, s - 0.35 * k, s + 0.15 * k)));
+  if (ca > 0.01) {
+    const label = valid ? String(Math.round(lerp(y0, y1, easeOutCubic(p)))) : tx.number || '';
+    if (label) {
+      ctx.save();
+      ctx.globalAlpha = ca;
+      const size = 250 * u;
+      setFont(ctx, typo.display, size);
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 30 * u;
+      ctx.fillStyle = '#ffffff';
+      drawTracked(ctx, label, W / 2, H / 2 + env.oy * 0, size * 0.04);
+      ctx.shadowColor = 'transparent';
+      ctx.fillStyle = theme.dark ? theme.accentSolid : captionAccent(theme).solid;
+      const lw = 360 * u * easeOutCubic(p);
+      ctx.fillRect(W / 2 - lw / 2, H / 2 + size * 0.48, lw, Math.max(1, 2 * u));
+      ctx.restore();
+    }
+  }
+  // 멈추는 순간 섬광
+  const fl = 1 - easeOutCubic(prog(tau, s - 0.12 * k, s + 0.45));
+  if (fl > 0 && tau > s - 0.12 * k) {
+    ctx.fillStyle = `rgba(255,250,240,${(fl * 0.85).toFixed(3)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.save();
+  pushIn(ctx, env, Math.max(0, tau - s), Math.max(1, seg.dur - s), 0.03);
+  drawLockup(ctx, env, tau, s, k, { onPhoto: true, darkBg: true, textColor: '#fbf8f1', textDim: 'rgba(251,248,241,0.75)' });
+  ctx.restore();
+  blackFadeIn(ctx, env, tau, 0.45);
+}
+
+/** 플래시 컷: 사진이 점점 빨라지며 번쩍이듯 교차하고, 큰 글자가 사이사이 꽂힌 뒤 타이틀 */
+function flashSchedule(n, s, k) {
+  const cuts = [];
+  let t = 0.1;
+  let i = 0;
+  const end = s - 0.25 * k;
+  while (t < end && n > 0) {
+    const d = lerp(0.5, 0.12, clamp(t / end));
+    cuts.push({ t, d: Math.min(d, end - t), i: i % n });
+    t += d;
+    i++;
+  }
+  return cuts;
+}
+
+function drawIntroFlashCut(ctx, seg, tau, env) {
+  const { W, H, u, theme, typo, project, tl } = env;
+  const IT = introT(env, seg);
+  const k = IT.k;
+  const s = IT.s;
+  const tx = project.text;
+  const photos = tl.gallery.slice(0, 10);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  const words = [tx.number, ...String(tx.eyebrow || '').split(/\s+/)].map((w) => (w || '').trim()).filter(Boolean).slice(0, 3);
+  const wordAt = words.map((_, i) => s * (0.3 + (i * 0.5) / Math.max(1, words.length)));
+  const wd = 0.38 * k;
+  const activeWord = wordAt.findIndex((t0) => tau >= t0 && tau < t0 + wd);
+  if (tau < s) {
+    if (activeWord >= 0) {
+      // 큰 글자 쾅
+      const t0 = wordAt[activeWord];
+      const e = easeOutCubic(prog(tau, t0, t0 + 0.18));
+      const word = words[activeWord];
+      const size = fitFontSize(ctx, typo.display, word, 300 * u, W * 0.86, 0.06);
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      const sc = lerp(1.5, 1, e);
+      ctx.scale(sc, sc);
+      setFont(ctx, typo.display, size, Math.max(600, typo.display.weight));
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = e;
+      ctx.fillStyle = accentGradient(ctx, theme.dark ? theme : { ...theme, accent: captionAccent(theme).accent }, -size * 0.5, size * 0.5);
+      drawTracked(ctx, word, 0, 0, size * 0.06);
+      ctx.restore();
+    } else if (photos.length) {
+      const cuts = flashSchedule(photos.length, s, k);
+      let cur = null;
+      for (const c of cuts) if (tau >= c.t) cur = c;
+      if (cur) {
+        const a = env.assets.get(itemKey(photos[cur.i]));
+        const q = clamp((tau - cur.t) / Math.max(0.05, cur.d));
+        if (a && !a.failed) {
+          ctx.save();
+          const r = ((cur.i * 53) % 7) - 3;
+          ctx.translate(W / 2, H / 2);
+          ctx.rotate((r * Math.PI) / 900);
+          ctx.translate(-W / 2, -H / 2);
+          drawCover(ctx, a.img, a.w, a.h, 0, 0, W, H, lerp(1.2, 1.06, easeOutCubic(q)), 0.5, 0.42);
+          ctx.restore();
+        }
+        // 컷마다 번쩍
+        const f = 1 - easeOutCubic(clamp((tau - cur.t) / 0.09));
+        if (f > 0) {
+          ctx.fillStyle = `rgba(255,255,255,${(f * 0.6).toFixed(3)})`;
+          ctx.fillRect(0, 0, W, H);
+        }
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
+  } else {
+    // 타이틀: 마지막 사진을 흐리게 깔고
+    const last = photos[photos.length - 1];
+    const a = last ? env.assets.get(itemKey(last)) : null;
+    if (a && !a.failed && a.bg) {
+      ctx.imageSmoothingQuality = 'low';
+      drawCover(ctx, a.bg, a.bg.width, a.bg.height, 0, 0, W, H, lerp(1.25, 1.12, easeOutCubic(prog(tau, s, seg.dur))));
+      ctx.imageSmoothingQuality = 'high';
+    } else drawThemeBackground(ctx, W, H, theme, tau, 0.6);
+    const dimA = IT.dim == null ? 0.62 : IT.dim;
+    ctx.fillStyle = `rgba(0,0,0,${dimA})`;
+    ctx.fillRect(0, 0, W, H);
+    drawBokeh(ctx, W, H, tau, { seed: 'flash', discs: 10, sparks: 30, color: theme.particle, alpha: 0.6 });
+    const fl = 1 - easeOutCubic(prog(tau, s, s + 0.5));
+    if (fl > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${(fl * 0.9).toFixed(3)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.save();
+    pushIn(ctx, env, tau - s, Math.max(1, seg.dur - s), 0.03);
+    drawLockup(ctx, env, tau, s + 0.1, k, { onPhoto: true, darkBg: true, textColor: '#fbf8f1', textDim: 'rgba(251,248,241,0.75)' });
+    ctx.restore();
+  }
 }
 
 /** 캡션용 금색: 밝은 테마여도 사진 위에서는 밝은 금색 사용 */

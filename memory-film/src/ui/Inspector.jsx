@@ -1,10 +1,10 @@
 // 우측 인스펙터: 선택한 사진/챕터 속성 편집, 미선택 시 프로젝트 요약
 import React from 'react';
-import { Section, Field, TextInput, Slider, Segmented, Button, Icon } from './controls.jsx';
+import { Section, Field, TextInput, Slider, Segmented, Button, Icon, Toggle } from './controls.jsx';
 import { Thumb } from './Filmstrip.jsx';
 import { TRANSITIONS } from '../engine/transitions.js';
 import { CHAPTER_DEFAULT_DURATION } from '../engine/timeline.js';
-import { MOTION_OPTIONS } from '../engine/presets.js';
+import { MOTION_OPTIONS, MONTAGE_STYLES } from '../engine/presets.js';
 import { photoMeta, updateItem, useMetaVersion } from './store.js';
 import { isLowRes, photoDims, checklist } from './logic.js';
 import { fmtTime } from '../engine/math.js';
@@ -30,8 +30,19 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
 
   if (ids.length > 1) {
     const sel = project.items.filter((i) => selected.has(i.id));
+    const g0 = tl.byItem?.get(sel[0]?.id);
+    const oneGroup = g0?.type === 'group' && sel.length === g0.items.length && sel.every((i) => tl.byItem.get(i.id) === g0);
+    const setAll = (patch) => update((p) => ({ ...p, items: p.items.map((i) => (selected.has(i.id) ? { ...i, ...patch } : i)) }));
     return (
       <div className="inspector">
+        {oneGroup && (
+          <Section title={`몽타주 장면 · ${MONTAGE_STYLES[g0.style]?.name}`} hint={`사진 ${sel.length}장이 한 화면에 함께 나오는 장면입니다 (${g0.dur.toFixed(1)}초). 몽타주는 사진 사이사이에 자동으로 배치됩니다.`}>
+            <Button icon="photo" variant="soft" size="sm" onClick={() => setAll({ noMontage: true })}>
+              몽타주 풀기 (한 장씩 보이기)
+            </Button>
+            <p className="hint small">몽타주가 나오는 빈도는 ‘스타일’ 단계에서 바꿀 수 있습니다.</p>
+          </Section>
+        )}
         <Section title={`${sel.length}개 선택됨`} hint="Shift·Ctrl 클릭으로 여러 장을 선택할 수 있습니다.">
           <Field label="다음 전환 일괄 변경">
             <TransitionSelect value="auto" onChange={(v) => update((p) => ({ ...p, items: p.items.map((i) => (selected.has(i.id) ? { ...i, transition: v } : i)) }))} />
@@ -39,6 +50,26 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
           <Field label="화면 맞춤 일괄 변경">
             <Segmented value="" onChange={(v) => update((p) => ({ ...p, items: p.items.map((i) => (selected.has(i.id) ? { ...i, fit: v } : i)) }))} options={[['auto', '자동'], ['cover', '꽉'], ['contain', '전체']]} size="sm" />
           </Field>
+          {sel.some((i) => i.type === 'photo') && (
+            <div className="btn-row">
+              <Button size="sm" variant="soft" onClick={() => setAll({ star: true })} title="인트로·엔딩에 이 사진들을 먼저 사용">
+                ★ 대표 사진으로
+              </Button>
+              <Button size="sm" variant="soft" onClick={() => setAll({ star: undefined })}>
+                ☆ 대표 해제
+              </Button>
+            </div>
+          )}
+          {sel.some((i) => i.type === 'photo') && (
+            <div className="btn-row">
+              <Button size="sm" variant="soft" onClick={() => setAll({ skip: true })}>
+                영상에서 빼기
+              </Button>
+              <Button size="sm" variant="soft" onClick={() => setAll({ skip: undefined })}>
+                다시 넣기
+              </Button>
+            </div>
+          )}
           <Button icon="trash" variant="danger" onClick={actions.deleteSelected}>
             선택 항목 삭제
           </Button>
@@ -91,6 +122,8 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
   const rotate = (d) => update((p) => updateItem(p, item.id, { rotate: (((rot + d) % 360) + 360) % 360, focus: undefined }));
   const low = isLowRes(item);
   const date = item.date ? new Date(item.date) : null;
+  const grp = tl.byItem?.get(item.id);
+  const inGroup = grp?.type === 'group' ? grp : null;
   return (
     <div className="inspector">
       <FocusPicker item={item} meta={meta} rot={rot} onPick={(f) => update((p) => updateItem(p, item.id, { focus: f }))} />
@@ -112,7 +145,9 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
         <span>
           {meta.w ? `${meta.w}×${meta.h}` : ''}
           {date && ` · ${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`}
-          {date && item.dateSource !== 'exif' && ' (파일 날짜)'}
+          {date && item.dateSource === 'name' && ' (파일 이름의 날짜)'}
+          {date && item.dateSource === 'folder' && ' (폴더 이름의 연도)'}
+          {date && (item.dateSource === 'file' || !item.dateSource) && ' (파일 날짜 · 촬영일 정보 없음)'}
         </span>
         {low && (
           <span className="warn-line">
@@ -125,7 +160,22 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
           </span>
         )}
       </div>
-      <Section title="자막">
+      <div className="insp-flags">
+        <Toggle
+          checked={!item.skip}
+          onChange={(v) => update((p) => updateItem(p, item.id, { skip: v ? undefined : true }))}
+          label="영상에 사용"
+          desc={item.skip ? '자동 선별에서 빠진 사진입니다. 켜면 다시 들어갑니다' : '끄면 지우지 않고 영상에서만 뺍니다'}
+        />
+        <Toggle checked={!!item.star} onChange={(v) => update((p) => updateItem(p, item.id, { star: v || undefined }))} label="★ 대표 사진" desc="인트로·엔딩의 사진 장면에 먼저 사용합니다" />
+        <Toggle
+          checked={!item.noMontage}
+          onChange={(v) => update((p) => updateItem(p, item.id, { noMontage: v ? undefined : true }))}
+          label="몽타주에 넣어도 됨"
+          desc={inGroup ? `지금 ‘${MONTAGE_STYLES[inGroup.style]?.name}’ 몽타주에서 다른 사진 ${inGroup.items.length - 1}장과 함께 나옵니다` : '끄면 이 사진은 항상 한 장씩 크게 나옵니다'}
+        />
+      </div>
+      <Section title="자막" hint={inGroup ? '자막을 넣으면 이 사진은 몽타주에서 빠져 한 장으로 크게 나옵니다.' : null}>
         <Field label="연도 · 라벨" hint="금색 큰 글씨로 표시 (예: 1998, 창립)">
           <TextInput value={item.label} onChange={set('label')} placeholder="1998" maxLength={20} />
         </Field>
@@ -197,7 +247,9 @@ function FocusPicker({ item, meta, rot, onPick }) {
 }
 
 function Summary({ project, tl, onSelectIds }) {
-  const photos = project.items.filter((i) => i.type === 'photo').length;
+  const allPhotos = project.items.filter((i) => i.type === 'photo');
+  const used = allPhotos.filter((i) => !i.skip).length;
+  const photos = used < allPhotos.length ? `${used} / ${allPhotos.length}` : allPhotos.length;
   const checks = checklist(project, tl);
   return (
     <div className="inspector">
