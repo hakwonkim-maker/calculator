@@ -1,0 +1,11 @@
+node_modules
+dist-renderer
+release
+tests/out
+tests/fixtures
+tests/fixtures-big
+tests/fixtures-220
+music-library
+tests/fixtures-heic
+tests/fixtures-mix
+tests/fixtures-old
