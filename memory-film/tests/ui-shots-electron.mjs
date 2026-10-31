@@ -8,7 +8,7 @@ const { _electron } = require(process.env.PW_PATH || 'playwright');
 const root = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = process.env.MF_FIXTURES || path.join(root, 'fixtures-220');
 const shot = (n) => win.screenshot({ path: path.join(root, 'out', `ui_${n}.png`) });
-const app = await _electron.launch({ executablePath: path.join(root, '..', 'node_modules', 'electron', 'dist', 'electron'), args: [path.join(root, '..'), '--no-sandbox', '--user-data-dir=' + fs.mkdtempSync('/tmp/claude-0/mf-')], env: { ...process.env, MF_MUSIC_DIR: fs.mkdtempSync('/tmp/claude-0/mf-music-'), NO_PROXY: '127.0.0.1,localhost' } });
+const app = await _electron.launch({ executablePath: path.join(root, '..', 'node_modules', 'electron', 'dist', 'electron'), args: [path.join(root, '..'), '--no-sandbox', '--user-data-dir=' + fs.mkdtempSync('/tmp/claude-0/mf-')], env: { ...process.env, MF_TEST_NO_PROMPT: '1', MF_MUSIC_DIR: fs.mkdtempSync('/tmp/claude-0/mf-music-'), NO_PROXY: '127.0.0.1,localhost' } });
 await app.evaluate(({ dialog }, { fixtures }) => {
   dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixtures] });
 }, { fixtures });

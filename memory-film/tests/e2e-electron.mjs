@@ -12,7 +12,7 @@ const big = !!process.env.MF_FIXTURES;
 const outFile = path.join(root, 'out', 'e2e.mp4');
 fs.rmSync(outFile, { force: true });
 
-const app = await _electron.launch({ executablePath: process.env.MF_EXE || path.join(root, '..', 'node_modules', 'electron', 'dist', 'electron'), args: [...(process.env.MF_EXE ? [] : [path.join(root, '..')]), '--no-sandbox', '--user-data-dir=' + fs.mkdtempSync('/tmp/claude-0/mf-')], env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', MF_MUSIC_DIR: fs.mkdtempSync('/tmp/claude-0/mf-music-'), NO_PROXY: '127.0.0.1,localhost' } });
+const app = await _electron.launch({ executablePath: process.env.MF_EXE || path.join(root, '..', 'node_modules', 'electron', 'dist', 'electron'), args: [...(process.env.MF_EXE ? [] : [path.join(root, '..')]), '--no-sandbox', '--user-data-dir=' + fs.mkdtempSync('/tmp/claude-0/mf-')], env: { ...process.env, MF_TEST_NO_PROMPT: '1', ELECTRON_DISABLE_SECURITY_WARNINGS: '1', MF_MUSIC_DIR: fs.mkdtempSync('/tmp/claude-0/mf-music-'), NO_PROXY: '127.0.0.1,localhost' } });
 await app.evaluate(({ dialog }, { fixtures, outFile, musicDir }) => {
   dialog.showOpenDialog = async (_w, opts) => {
     const props = opts?.properties || _w?.properties || [];
@@ -71,7 +71,9 @@ await win.click('.step:has-text("음악")');
 // 무료 음악 라이브러리 (MF_MUSIC_SITE 가 있으면 온라인 받기까지 검증)
 await win.waitForSelector('.lib');
 if (process.env.MF_COMMONS_API) {
-  await win.click('.lib button:has-text("인터넷에서 무료 음악")');
+  // 설치본처럼 음악이 이미 들어 있으면 받기 버튼이 없음
+  const fetchBtn = await win.$('.lib button:has-text("인터넷에서 무료 음악")');
+  if (fetchBtn) await fetchBtn.click();
   await win.waitForSelector('.lib-row', { timeout: 30000 });
   console.log('library rows:', await win.$$eval('.lib-row', (e) => e.length));
   await win.click('.lib-row >> nth=0 >> button:has-text("넣기")');
@@ -98,17 +100,17 @@ await win.waitForSelector('.export-modal');
 await win.waitForTimeout(8000);
 await win.screenshot({ path: path.join(root, 'out', 'e2e_exporting.png') });
 console.log('encoder line:', (await win.textContent('.export-modal')).match(/인코딩: [^·]*/)?.[0] || '(n/a)');
-await win.waitForSelector('.done-badge, .error-box', { timeout: 1700000 });
+await win.waitForSelector('.done-badge, .error-friendly', { timeout: 1700000 });
 console.log('export seconds', ((Date.now() - t0) / 1000).toFixed(1));
 await win.screenshot({ path: path.join(root, 'out', 'e2e_done.png') });
-const err = await win.$('.error-box');
+const err = await win.$('.error-friendly');
 if (err) console.log('EXPORT ERROR:', await err.textContent());
 if (!big && !err) {
   await win.click('.modal-actions button:has-text("닫기")');
   const t1 = Date.now();
   await win.click('button:has-text("빠른 시안 먼저 만들기")');
-  await win.waitForSelector('.done-badge, .error-box', { timeout: 900000 });
-  console.log('draft seconds', ((Date.now() - t1) / 1000).toFixed(1), (await win.$('.error-box')) ? 'ERROR' : 'ok');
+  await win.waitForSelector('.done-badge, .error-friendly', { timeout: 900000 });
+  console.log('draft seconds', ((Date.now() - t1) / 1000).toFixed(1), (await win.$('.error-friendly')) ? 'ERROR' : 'ok');
   await win.click('.modal-actions button:has-text("닫기")');
   console.log('export panel ETA:', (await win.textContent('.panel')).match(/예상 제작 시간[^)]*\)?/)?.[0]);
 }

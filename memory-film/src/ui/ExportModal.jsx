@@ -9,6 +9,19 @@ import { Button, Icon } from './controls.jsx';
 const SPEED_KEY = 'memoria.exportSpeed.v1';
 
 /** 이 PC에서 측정된 제작 속도로 예상 시간 계산 (초). 기록이 없으면 null */
+/** 내보내기 오류 → 사용자가 이해할 수 있는 원인과 해결 방법 */
+export function friendlyError(msg) {
+  const m = String(msg || '');
+  if (/ENOSPC|No space left|공간이 부족/i.test(m)) return '저장 공간이 부족합니다. 다른 드라이브(예: D:)를 고르거나 불필요한 파일을 지운 뒤 다시 만들어 주세요.';
+  if (/EBUSY|EPERM|EACCES|Permission denied|being used|resource busy/i.test(m))
+    return '영상 파일을 저장할 수 없습니다. 같은 이름의 영상이 플레이어 등에서 열려 있으면 닫아 주시고, 문서·바탕화면처럼 쓰기 가능한 폴더를 골라 주세요.';
+  if (/그래픽 장치/.test(m)) return m;
+  if (/nvenc|qsv|amf|h264_|encoder|Error while opening encoder/i.test(m))
+    return '그래픽카드 인코더에서 문제가 생겼습니다. 내보내기 단계의 ‘인코딩 방식’을 ‘CPU만 사용’으로 바꿔 다시 만들어 주세요.';
+  if (/memory|out of memory|allocation/i.test(m)) return '메모리가 부족합니다. 다른 프로그램을 닫고, 화질을 Full HD 이하로 낮춰 다시 시도해 주세요.';
+  return '예기치 않은 문제로 영상을 만들지 못했습니다. 프로그램을 다시 켜고 시도해 보시고, 계속되면 도움말의 ‘문제 보고서’를 보내 주세요.';
+}
+
 export function estimateExportSeconds(w, h, frames) {
   try {
     const sp = JSON.parse(localStorage.getItem(SPEED_KEY) || 'null');
@@ -186,8 +199,13 @@ export function ExportModal({ project, outPath, onClose, draft = false }) {
         {(st.phase === 'error' || st.phase === 'cancelled') && (
           <>
             <div className="modal-title">{st.phase === 'error' ? '영상을 만들지 못했습니다' : '취소되었습니다'}</div>
-            {st.error && <pre className="error-box">{st.error}</pre>}
-            {st.phase === 'error' && <p className="hint small">저장 위치의 여유 공간과 쓰기 권한을 확인한 뒤 다시 시도해 주세요.</p>}
+            {st.phase === 'error' && st.error && <p className="error-friendly">{friendlyError(st.error)}</p>}
+            {st.error && st.phase === 'error' && (
+              <details className="error-details">
+                <summary>자세한 내용 (문의 시 함께 보내 주세요)</summary>
+                <pre className="error-box">{st.error}</pre>
+              </details>
+            )}
             <div className="modal-actions">
               <Button variant="primary" onClick={onClose}>
                 닫기

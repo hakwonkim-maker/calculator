@@ -1,6 +1,6 @@
 // 좌측 단계별 설정 패널 — 모든 선택은 카드 클릭 한 번으로 적용
 import React, { useEffect, useRef, useState } from 'react';
-import { Section, Field, TextInput, Slider, Segmented, Toggle, Button, Icon } from './controls.jsx';
+import { Section, Field, TextInput, Slider, Segmented, Toggle, Button, Icon, keepSave } from './controls.jsx';
 import {
   THEMES, TYPOGRAPHY, LOOKS, TRANSITION_STYLES, RESOLUTIONS, QUALITY, INTRO_STYLES, OUTRO_STYLES, ASPECTS, TEMPLATES,
   frameSize, outputSize, applyTemplate, introTiming, MONTAGE_FREQ,
@@ -18,7 +18,7 @@ import { estimateExportSeconds } from './ExportModal.jsx';
 const fmtSec = (v) => `${Number(v).toFixed(1)}초`;
 
 /** 실제 렌더 썸네일이 있는 선택 카드 */
-function PreviewCard({ project, kind, on, title, desc, onClick, badge }) {
+export function PreviewCard({ project, kind, on, title, desc, onClick, badge }) {
   const src = useThumb(project, kind);
   return (
     <button className={'pcard' + (on ? ' on' : '')} onClick={onClick}>
@@ -221,9 +221,9 @@ function LengthSection({ project, update, tl, actions }) {
       {mode === 'total' ? (
         <>
           <div className="time-input">
-            <input type="number" min={0} max={180} value={mm} onKeyDown={(e) => e.stopPropagation()} onChange={(e) => setTarget((Number(e.target.value) || 0) * 60 + ss)} />
+            <input type="number" min={0} max={180} value={mm} onKeyDown={keepSave} onChange={(e) => setTarget((Number(e.target.value) || 0) * 60 + ss)} />
             <span>분</span>
-            <input type="number" min={0} max={59} value={ss} onKeyDown={(e) => e.stopPropagation()} onChange={(e) => setTarget(mm * 60 + Math.min(59, Number(e.target.value) || 0))} />
+            <input type="number" min={0} max={59} value={ss} onKeyDown={keepSave} onChange={(e) => setTarget(mm * 60 + Math.min(59, Number(e.target.value) || 0))} />
             <span>초</span>
           </div>
           <div className="chip-row">

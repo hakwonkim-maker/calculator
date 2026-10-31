@@ -115,13 +115,15 @@ export function choosePhotos(photos, n) {
 }
 
 const applyKeep = (project, keep) => ({ ...project, items: project.items.map((i) => (i.type === 'photo' ? { ...i, skip: keep.has(i.id) ? undefined : true } : i)) });
+// (keepExcluded일 때 원래 빠진 사진은 keep에 없으므로 그대로 skip 유지)
 
 /**
  * 목표 길이(target초)에서 사진 1장당 약 perPhoto초가 되도록 몇 장을 쓸지 정하고 고른다.
  * 반환: { keep:Set, count, total(사진 수), photoDuration(예상), project(적용 결과) }
  */
-export function planSelection(project, target, perPhoto = 3) {
-  const photos = project.items.filter((i) => i.type === 'photo');
+export function planSelection(project, target, perPhoto = 3, { keepExcluded = false } = {}) {
+  // keepExcluded: 사용자가 이미 뺀 사진은 후보에서 제외하고 계속 빼 둠 (매직 다시 만들기)
+  const photos = project.items.filter((i) => i.type === 'photo' && !(keepExcluded && i.skip));
   const base = { ...project, style: { ...project.style, lengthMode: 'total', targetDuration: target } };
   const pdFor = (keep) => buildTimeline(applyKeep(base, keep)).photoDuration;
   const must = photos.filter(isMust).length;

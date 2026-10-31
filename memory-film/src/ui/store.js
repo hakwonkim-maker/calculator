@@ -26,7 +26,8 @@ export function useProjectStore() {
       filePath: auto?.filePath || null,
       past: [],
       future: [],
-      dirty: false,
+      // 자동 저장에서 복원한 작업은 파일에 저장된 것과 다를 수 있으므로 '저장 안 됨'으로 취급
+      dirty: !!(auto && auto.project.items.length),
     };
   });
   const last = useRef({ key: null, time: 0 });

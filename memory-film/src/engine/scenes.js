@@ -842,12 +842,78 @@ function drawCaptionText(ctx, env, label, cap, x, capY, align, centered, a, line
 // =====================================================================
 // 챕터 카드 (예: "1996 · 작은 시작")
 // =====================================================================
+
+/** 챕터 배경 콜라주 (그 시기 사진 2~6장을 살짝 기울여 깔고 흐리게) — 한 번 만들어 캐시 */
+function chapterCollage(env, seg) {
+  const ps = seg.sectionPhotos || [];
+  if (ps.length < 2) return null;
+  const keys = ps.map((x) => itemKey(x));
+  const assets = keys.map((k) => env.assets.getThumb(k));
+  if (assets.some((a) => !a)) return null; // 아직 로딩 중 (출력 때는 미리 다 불러옴)
+  const imgs = assets.filter((a) => !a.failed);
+  if (imgs.length < 2) return null;
+  const { W, H } = env;
+  const ck = `chcol|${seg.key}|${keys.join(',')}|${W}x${H}`;
+  let bmp = env.cache.get(ck);
+  if (bmp) return bmp;
+  const cw = Math.round(W / 2);
+  const chh = Math.round(H / 2);
+  const c = new OffscreenCanvas(cw, chh);
+  const g = c.getContext('2d');
+  g.fillStyle = '#111';
+  g.fillRect(0, 0, cw, chh);
+  const n = imgs.length;
+  const cols = W >= H ? (n <= 4 ? 2 : 3) : 2;
+  const rows = Math.ceil(n / cols);
+  const tw = cw / cols;
+  const th = chh / rows;
+  const r = rng(hashStr(seg.key + '|collage'));
+  imgs.forEach((a, k) => {
+    const cx = (k % cols) * tw + tw / 2;
+    const cy = Math.floor(k / cols) * th + th / 2;
+    g.save();
+    g.translate(cx, cy);
+    g.rotate((r() - 0.5) * 0.08);
+    const sw = tw * 1.08;
+    const sh = th * 1.08;
+    drawCover(g, a.img, a.w, a.h, -sw / 2, -sh / 2, sw, sh, 1);
+    g.restore();
+  });
+  // 흐리게 (작은 캔버스에서 블러 → 크게 늘려도 매끈)
+  const b = new OffscreenCanvas(Math.round(cw / 2), Math.round(chh / 2));
+  const bg = b.getContext('2d');
+  bg.filter = 'blur(3px) saturate(0.9)';
+  bg.drawImage(c, 0, 0, b.width, b.height);
+  bmp = b.transferToImageBitmap();
+  env.cache.set(ck, bmp);
+  return bmp;
+}
+
+// =====================================================================
+// =====================================================================
 function drawChapter(ctx, seg, tau, env) {
   const { W, H, u, theme, typo } = env;
   const it = seg.item;
   const bgA = seg.nextPhoto ? env.assets.get(itemKey(seg.nextPhoto)) : null;
   const p = clamp(tau / seg.dur);
-  if (bgA && !bgA.failed) {
+  const collage = chapterCollage(env, seg);
+  if (collage) {
+    // 이 시기의 사진들이 흐릿하게 깔린 콜라주가 천천히 다가오고 살짝 흐름
+    ctx.imageSmoothingQuality = 'medium';
+    const z = lerp(1.14, 1.04, easeOutCubic(p));
+    ctx.save();
+    ctx.translate(lerp(-14, 14, p) * u, 0);
+    drawCover(ctx, collage, collage.width, collage.height, 0, 0, W, H, z);
+    ctx.restore();
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = theme.dark ? theme.scrim + '0.5)' : rgba(theme.bg[0], 0.68);
+    ctx.fillRect(0, 0, W, H);
+    const rg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.62);
+    rg.addColorStop(0, theme.dark ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.1)');
+    rg.addColorStop(1, theme.dark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.08)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+  } else if (bgA && !bgA.failed) {
     ctx.imageSmoothingQuality = 'low';
     drawCover(ctx, bgA.bg, bgA.bg.width, bgA.bg.height, 0, 0, W, H, lerp(1.18, 1.06, easeOutCubic(p)));
     ctx.imageSmoothingQuality = 'high';

@@ -32,6 +32,11 @@ const paths = {
   image: <><rect x="3" y="3" width="18" height="18" rx="3" {...P} /><path d="M3 16l5-5 4 4 3-3 6 6" {...P} /></>,
 };
 
+/** 입력칸 키 입력은 단축키로 넘기지 않음 — 단, Ctrl+S(저장)는 통과 */
+export const keepSave = (e) => {
+  if (!((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's')) e.stopPropagation();
+};
+
 export function Icon({ name, size = 18, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={style} aria-hidden="true">
@@ -73,7 +78,7 @@ export function TextInput({ value, onChange, placeholder, maxLength, multiline, 
     onFocus,
     spellCheck: false,
     onChange: (e) => onChange(e.target.value),
-    onKeyDown: (e) => e.stopPropagation(),
+    onKeyDown: keepSave,
   };
   return multiline ? <textarea className="input" rows={rows} {...props} /> : <input className="input" type="text" {...props} />;
 }
@@ -96,7 +101,7 @@ export function Slider({ value, min, max, step = 0.1, onChange, format = (v) => 
         value={value}
         style={{ '--pct': `${pct}%` }}
         onChange={(e) => onChange(Number(e.target.value))}
-        onKeyDown={(e) => e.stopPropagation()}
+        onKeyDown={keepSave}
       />
     </div>
   );

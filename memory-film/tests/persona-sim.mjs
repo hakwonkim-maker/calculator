@@ -18,7 +18,7 @@ fs.rmSync(out, { force: true });
 const app = await _electron.launch({
   executablePath: process.env.MF_EXE || path.join(root, '..', 'node_modules', 'electron', 'dist', 'electron'),
   args: [...(process.env.MF_EXE ? [] : [path.join(root, '..')]), '--no-sandbox', '--user-data-dir=' + fs.mkdtempSync('/tmp/claude-0/mf-')],
-  env: { ...process.env, MF_MUSIC_DIR: fs.mkdtempSync('/tmp/claude-0/mf-music-'), NO_PROXY: '127.0.0.1,localhost' },
+  env: { ...process.env, MF_TEST_NO_PROMPT: '1', MF_MUSIC_DIR: fs.mkdtempSync('/tmp/claude-0/mf-music-'), NO_PROXY: '127.0.0.1,localhost' },
 });
 await app.evaluate(({ dialog }, { folder, out }) => {
   dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
@@ -55,8 +55,8 @@ const exportVideo = async (draft) => {
   else await click('.panel .btn-primary:has-text("영상 파일 만들기")');
   await win.waitForSelector('.export-modal');
   const te = Date.now();
-  await win.waitForSelector('.done-badge, .error-box', { timeout: 1800000 });
-  const err = await win.$('.error-box');
+  await win.waitForSelector('.done-badge, .error-friendly', { timeout: 1800000 });
+  const err = await win.$('.error-friendly');
   log(err ? 'EXPORT ERROR ' + (await err.textContent()) : `영상 완성 (${((Date.now() - te) / 1000).toFixed(0)}초)`);
   await shot('done');
 };
@@ -115,6 +115,36 @@ if (who === 'A') {
   await shot('selected');
   await click('.step:has-text("내보내기")');
   await click('.aspect:has-text("세로 9:16")');
+  await exportVideo(true);
+} else if (who === 'M') {
+  // 매직: 템플릿 → 매직(타임 롤 + 음악) → 새 폴더 → 자동 완성 → 사진 몇 장 빼고 → 매직 다시(기존 사진)
+  await click('.tpl-grid .pcard:has-text("창립")');
+  await click('.top-actions button:has-text("매직")');
+  await win.waitForSelector('.magic-modal');
+  await click('.magic-intros .pcard:has-text("타임 롤")');
+  await win.waitForSelector('.magic-tracks .lib-row', { timeout: 30000 }).catch(() => {});
+  if (await win.$('.magic-tracks .lib-row')) await click('.magic-tracks .lib-row >> nth=0');
+  else await click('.magic-modal .chip:has-text("음악 없이")');
+  await shot('magic_modal');
+  await click('.magic-modal .btn-primary');
+  await win.waitForSelector('.toast:has-text("완성")', { timeout: 300000 });
+  log('매직 1차:', (await win.textContent('.toast:has-text("완성")')).replace(/\s+/g, ' ').slice(0, 140));
+  log('필름스트립 챕터:', await win.$$eval('.card-chapter b', (e) => e.map((x) => x.textContent).join(',')));
+  await shot('magic_done');
+  // 사용 중인 첫 사진 2장을 영상에서 빼기
+  await click('.card-slot:not(:has(.skipped)) .card:not(.chapter):not(.skipped) >> nth=0');
+  await click('.inspector .toggle:has-text("영상에 사용")');
+  const before = await status();
+  await click('.top-actions button:has-text("매직")');
+  await win.waitForSelector('.magic-modal');
+  await click('.magic-intros .pcard:has-text("플래시 컷")');
+  await click('.magic-modal .import-btn:has-text("지금 프로젝트 사진")');
+  await click('.magic-modal .btn-primary');
+  await win.waitForSelector('.toast:has-text("완성") >> nth=0', { timeout: 300000 });
+  await win.waitForTimeout(600);
+  log('뺀 뒤:', before, '→ 매직 2차:', await status());
+  log('뺀 사진 유지:', await win.$$eval('.card.skipped', (e) => e.length) + '장 흐리게');
+  await shot('magic_again');
   await exportVideo(true);
 } else {
   await click('.tpl-grid .pcard:has-text("가족")');

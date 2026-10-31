@@ -9,7 +9,9 @@ contextBridge.exposeInMainWorld('mfApi', {
   saveVideoDialog: (name) => ipcRenderer.invoke('dialog:saveVideo', name),
   scanPaths: (paths, recursive) => ipcRenderer.invoke('scan:paths', paths, recursive),
   saveProject: (json, path, name) => ipcRenderer.invoke('project:save', json, path, name),
-  openProject: () => ipcRenderer.invoke('project:open'),
+  openProject: (p) => ipcRenderer.invoke('project:open', p),
+  pendingOpen: () => ipcRenderer.invoke('app:pendingOpen'),
+  onOpenFile: (fn) => ipcRenderer.on('app:open-file', (_e, p) => fn(p)),
   exists: (paths) => ipcRenderer.invoke('fs:exists', paths),
   showItem: (p) => ipcRenderer.invoke('shell:showItem', p),
   openPath: (p) => ipcRenderer.invoke('shell:openPath', p),
@@ -22,6 +24,18 @@ contextBridge.exposeInMainWorld('mfApi', {
   exportFrame: (data) => ipcRenderer.invoke('export:frame', data),
   exportFinish: () => ipcRenderer.invoke('export:finish'),
   exportCancel: () => ipcRenderer.invoke('export:cancel'),
+  setDirty: (v) => ipcRenderer.invoke('app:dirty', v),
+  quitNow: () => ipcRenderer.invoke('app:quitNow'),
+  onSaveAndQuit: (fn) => ipcRenderer.on('app:save-and-quit', () => fn()),
+  openLogs: () => ipcRenderer.invoke('app:openLogs'),
+  log: (...a) => ipcRenderer.invoke('app:log', ...a),
+  notices: () => ipcRenderer.invoke('app:notices'),
+  relinkPhotos: (missing, folder) => ipcRenderer.invoke('photos:relink', missing, folder),
+  onScanProgress: (fn) => {
+    const h = (_e, n) => fn(n);
+    ipcRenderer.on('scan:progress', h);
+    return () => ipcRenderer.removeListener('scan:progress', h);
+  },
   photoDates: (paths) => ipcRenderer.invoke('photos:dates', paths),
   musicLibrary: () => ipcRenderer.invoke('music:library'),
   musicFetchOnline: () => ipcRenderer.invoke('music:fetchOnline'),

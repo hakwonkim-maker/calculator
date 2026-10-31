@@ -26,7 +26,7 @@ export async function importPaths(paths, recursive = true) {
 }
 
 function photoItemFromScan(p) {
-  return { id: newId('p'), type: 'photo', path: p.path, name: p.name, date: p.date, dateSource: p.dateSource, w: p.w || 0, h: p.h || 0, caption: '', label: '' };
+  return { id: newId('p'), type: 'photo', path: p.path, name: p.name, date: p.date, dateSource: p.dateSource, w: p.w || 0, h: p.h || 0, size: p.size, ...(p.origPath ? { origPath: p.origPath, folder: p.folder } : {}), caption: '', label: '' };
 }
 
 /** 웹(테스트) 모드: File 객체 → blob URL 아이템 */

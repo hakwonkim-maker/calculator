@@ -1,6 +1,6 @@
 {
   "name": "memoria-film-studio",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "사진 폴더로 고품질 기념 영상을 만드는 PC용 프로그램",
   "main": "electron/main.cjs",
   "scripts": {
@@ -15,7 +15,7 @@
     "test:ui": "node tests/ui-test.mjs",
     "test:e2e": "node tests/e2e-electron.mjs",
     "music": "node scripts/fetch-music.cjs",
-    "test:unit": "node tests/photodate-test.cjs && node tests/select-test.mjs && node tests/beats-test.mjs && node tests/enhance-test.mjs"
+    "test:unit": "node tests/photodate-test.cjs && node tests/select-test.mjs && node tests/beats-test.mjs && node tests/enhance-test.mjs && node tests/magic-test.mjs"
   },
   "author": "MEMORIA",
   "license": "UNLICENSED",
@@ -45,6 +45,7 @@
   "dependencies": {
     "exifr": "^7.1.3",
     "ffmpeg-static": "^5.3.0",
+    "heic-decode": "^2.1.0",
     "image-size": "^2.0.4"
   },
   "productName": "MEMORIA 기념영상 스튜디오",
@@ -88,6 +89,14 @@
         "filter": [
           "**/*"
         ]
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "memoria",
+        "name": "MEMORIA 프로젝트",
+        "description": "MEMORIA 기념영상 프로젝트",
+        "role": "Editor"
       }
     ]
   }

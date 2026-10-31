@@ -63,16 +63,40 @@ export function planMontage(items, style) {
       continue;
     }
     if (since >= gap) {
-      const ms = draw();
-      const [mn, mx] = MONTAGE_STYLES[ms].size;
-      const want = mn + Math.floor(r() * (mx - mn + 1));
-      let n = 0;
-      while (i + n < items.length && n < want && montageEligible(items[i + n])) n++;
+      // 무작위 값은 사용자가 바꾼 몽타주가 있어도 똑같이 소비 → 다른 몽타주는 그대로 유지
+      const auto = draw();
+      const [amn, amx] = MONTAGE_STYLES[auto].size;
+      const autoWant = amn + Math.floor(r() * (amx - amn + 1));
+      // 사용자가 이 자리의 몽타주를 바꿨거나(it.montage = 스타일) 풀었으면('off') 그대로 따름
+      const ov = it.montage;
+      let ms = ov && MONTAGE_STYLES[ov] ? ov : auto;
+      const count = (w) => {
+        let c = 0;
+        while (i + c < items.length && c < w && montageEligible(items[i + c])) c++;
+        return c;
+      };
+      let [mn, mx] = MONTAGE_STYLES[ms].size;
+      let n = count(ms === auto ? autoWant : Math.min(mx, Math.max(mn, autoWant)));
+      if (ms !== auto && n < mn) {
+        // 바꾼 스타일에 필요한 사진 수가 모자라면 원래 스타일 유지
+        ms = auto;
+        [mn, mx] = [amn, amx];
+        n = count(autoWant);
+      }
+      if (ov === 'off' && n >= amn) {
+        // 풀린 몽타주: 같은 사진들을 한 장씩 보여 주고, 다음 몽타주 간격은 원래대로
+        for (const x of items.slice(i, i + n)) out.push({ type: 'photo', item: x });
+        i += n;
+        prevStyle = auto;
+        since = 0;
+        gap = nextGap();
+        continue;
+      }
       // 남은 사진이 너무 적으면(끝부분) 몽타주 대신 일반 사진으로
       if (n >= mn && items.length - (i + n) >= 2) {
-        out.push({ type: 'group', items: items.slice(i, i + n), style: ms });
+        out.push({ type: 'group', items: items.slice(i, i + n), style: ms, custom: ms !== auto });
         i += n;
-        prevStyle = ms;
+        prevStyle = auto; // 사용자가 바꾼 스타일이 다음 몽타주 선택에 영향을 주지 않도록
         since = 0;
         gap = nextGap();
         continue;
@@ -211,7 +235,7 @@ function buildCore(project, photoDuration, T) {
   }
   for (const p of planMontage(project.items, st)) {
     const it = p.item;
-    if (p.type === 'group') raw.push({ type: 'group', key: 'g:' + p.items[0].id, items: p.items, style: p.style, dur: groupDuration(p.items.length, st.photoDuration, p.style) + T });
+    if (p.type === 'group') raw.push({ type: 'group', key: 'g:' + p.items[0].id, items: p.items, style: p.style, custom: p.custom, dur: groupDuration(p.items.length, st.photoDuration, p.style) + T });
     else if (it.type === 'photo') raw.push({ type: 'photo', key: it.id, item: it, dur: (Number(it.duration) || st.photoDuration) + T });
     else if (it.type === 'chapter') raw.push({ type: 'chapter', key: it.id, item: it, dur: (Number(it.duration) || CHAPTER_DEFAULT_DURATION) + T });
   }
@@ -286,6 +310,18 @@ function buildCore(project, photoDuration, T) {
     if (s.type !== 'chapter') return;
     const nx = raw.slice(i + 1).find((x) => x.type === 'photo') || raw.slice(0, i).reverse().find((x) => x.type === 'photo');
     s.nextPhoto = nx ? nx.item : null;
+    // 배경 콜라주용: 이 챕터 구간(다음 챕터 전까지)의 사진 최대 6장 (★대표 사진 우선, 고르게)
+    const sec = [];
+    for (let k = i + 1; k < raw.length && raw[k].type !== 'chapter'; k++) {
+      if (raw[k].type === 'photo') sec.push(raw[k].item);
+      else if (raw[k].type === 'group') sec.push(...raw[k].items);
+    }
+    const starred = sec.filter((x) => x.star);
+    const rest = sec.filter((x) => !x.star);
+    const pick = starred.slice(0, 6);
+    const need = 6 - pick.length;
+    for (let k = 0; k < need && k < rest.length; k++) pick.push(rest[Math.floor(((k + 0.5) * rest.length) / Math.min(need, rest.length))]);
+    s.sectionPhotos = [...new Set(pick)];
   });
   const last = raw[raw.length - 1];
   const total = last ? last.start + last.dur : 0;

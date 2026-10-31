@@ -41,11 +41,34 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
     return (
       <div className="inspector">
         {oneGroup && (
-          <Section title={`몽타주 장면 · ${MONTAGE_STYLES[g0.style]?.name}`} hint={`사진 ${sel.length}장이 한 화면에 함께 나오는 장면입니다 (${g0.dur.toFixed(1)}초). 몽타주는 사진 사이사이에 자동으로 배치됩니다.`}>
-            <Button icon="photo" variant="soft" size="sm" onClick={() => setAll({ noMontage: true })}>
-              몽타주 풀기 (한 장씩 보이기)
-            </Button>
-            <p className="hint small">몽타주가 나오는 빈도는 ‘스타일’ 단계에서 바꿀 수 있습니다.</p>
+          <Section title="몽타주 장면" hint={`사진 ${sel.length}장이 한 화면에 함께 나오는 장면입니다 (${g0.dur.toFixed(1)}초).`}>
+            <Field label="몽타주 효과 바꾸기">
+              <div className="chip-row tight">
+                {Object.entries(MONTAGE_STYLES).map(([id, m]) => (
+                  <button
+                    key={id}
+                    className={'chip' + (g0.style === id ? ' on' : '')}
+                    onClick={() => update((p) => updateItem(p, g0.items[0].id, { montage: id }))}
+                  >
+                    {m.name}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            {g0.custom && (
+              <button className="link" onClick={() => update((p) => updateItem(p, g0.items[0].id, { montage: undefined }))}>
+                자동으로 고른 효과로 되돌리기
+              </button>
+            )}
+            <div className="btn-row">
+              <Button icon="photo" variant="soft" size="sm" onClick={() => update((p) => updateItem(p, g0.items[0].id, { montage: 'off' }))} title="이 사진들을 한 장씩 크게 보여 줍니다">
+                몽타주 풀기
+              </Button>
+              <Button icon="trash" variant="danger" size="sm" onClick={() => setAll({ skip: true })} title="이 사진들을 영상에서 뺍니다 (파일은 그대로, 다시 넣을 수 있음)">
+                몽타주 삭제
+              </Button>
+            </div>
+            <p className="hint small">풀기: 사진을 한 장씩 보여 줌 · 삭제: 이 사진들을 영상에서 뺌(필름스트립에 흐리게 남아 다시 넣을 수 있음). 나오는 빈도는 ‘스타일’ 단계에서 바꿉니다.</p>
           </Section>
         )}
         <Section title={`${sel.length}개 선택됨`} hint="Shift·Ctrl 클릭으로 여러 장을 선택할 수 있습니다.">
@@ -174,6 +197,16 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
           desc={item.skip ? '자동 선별에서 빠진 사진입니다. 켜면 다시 들어갑니다' : '끄면 지우지 않고 영상에서만 뺍니다'}
         />
         <Toggle checked={!!item.star} onChange={(v) => update((p) => updateItem(p, item.id, { star: v || undefined }))} label="★ 대표 사진" desc="인트로·엔딩의 사진 장면에 먼저 사용합니다" />
+        {inGroup && (
+          <button className="link" onClick={() => onSelectIds(inGroup.items.map((x) => x.id))}>
+            이 몽타주 편집하기 (효과 바꾸기·풀기·삭제) →
+          </button>
+        )}
+        {item.montage === 'off' && (
+          <button className="link" onClick={() => update((p) => updateItem(p, item.id, { montage: undefined }))}>
+            풀었던 몽타주 다시 만들기
+          </button>
+        )}
         <Toggle
           checked={!item.noMontage}
           onChange={(v) => update((p) => updateItem(p, item.id, { noMontage: v ? undefined : true }))}

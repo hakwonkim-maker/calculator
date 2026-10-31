@@ -116,7 +116,10 @@ export class Renderer {
       thumbs.push(...n.thumbs);
     }
     if (seg.type === 'photo') full.push(itemKey(seg.item));
-    else if (seg.type === 'chapter' && seg.nextPhoto) full.push(itemKey(seg.nextPhoto));
+    else if (seg.type === 'chapter') {
+      if (seg.nextPhoto) full.push(itemKey(seg.nextPhoto));
+      if (seg.sectionPhotos?.length >= 2) thumbs.push(...seg.sectionPhotos.map((it) => itemKey(it)));
+    }
     if ((seg.type === 'photo' || seg.type === 'chapter') && logo && this.project.style.watermark) thumbs.push(logo);
     if (seg.type === 'intro' || seg.type === 'outro') {
       if (logo) thumbs.push(logo);

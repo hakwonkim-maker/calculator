@@ -4,6 +4,9 @@ import { useProjectStore, setPath, photoMeta, setPhotoMeta } from './store.js';
 import { buildTimeline, activeAt } from '../engine/timeline.js';
 import { planSelection, clearSelection } from '../engine/select.js';
 import { analyzePhotos } from '../engine/quality.js';
+import { magicProject } from '../engine/magic.js';
+import { MagicModal } from './Magic.jsx';
+import { HelpModal } from './Help.jsx';
 import { AudioPreview } from '../engine/audio.js';
 import { newId, normalizeProject, defaultProject, applyTemplate, TEMPLATES, MONTAGE_STYLES } from '../engine/presets.js';
 import { fmtTime } from '../engine/math.js';
@@ -14,7 +17,7 @@ import { Filmstrip } from './Filmstrip.jsx';
 import { Inspector } from './Inspector.jsx';
 import { ExportModal } from './ExportModal.jsx';
 import { PhotosPanel, TextPanel, StylePanel, MusicPanel, ExportPanel, TemplateGallery } from './panels.jsx';
-import { Icon, Button, Segmented } from './controls.jsx';
+import { Icon, Button, Segmented, keepSave } from './controls.jsx';
 
 const STEP_NEXT = {
   photos: ['text', '다음: 인트로·문구 입력'],
@@ -78,7 +81,11 @@ export default function App() {
   const [previewReq, setPreviewReq] = useState(null);
   const [compact, setCompact] = useState(false);
   const [busy, setBusy] = useState(null); // { text, done, total }
+  const [showMagic, setShowMagic] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const busyCancel = useRef(false);
+  const busyRef = useRef(false);
+  busyRef.current = !!busy || showMagic;
   const autoSelectRef = useRef(null);
   const previewRef = useRef(null);
   const audio = useMemo(() => new AudioPreview(), []);
@@ -111,27 +118,26 @@ export default function App() {
   const addItems = useCallback(
     ({ items, skipped }, atIndex = null) => {
       if (!items.length && !skipped.length) return toast('가져올 사진이 없습니다', 'warn');
-      let added = 0;
-      let dup = 0;
-      update((p) => {
-        let afterId = null;
-        if (atIndex != null && atIndex > 0) afterId = p.items[atIndex - 1]?.id;
-        const r = mergeItems(p, items, afterId);
-        if (atIndex === 0) {
-          const fresh = r.project.items.slice(p.items.length);
-          r.project.items = [...fresh, ...p.items];
-        }
-        added = r.added;
-        dup = r.dup;
-        return r.project;
-      });
+      // 결과(추가된 장수)를 바로 알아야 하므로 현재 상태로 먼저 계산한 뒤 반영
+      const p = projectRef.current;
+      let afterId = null;
+      if (atIndex != null && atIndex > 0) afterId = p.items[atIndex - 1]?.id;
+      const r = mergeItems(p, items, afterId);
+      if (atIndex === 0) {
+        const fresh = r.project.items.slice(p.items.length);
+        r.project.items = [...fresh, ...p.items];
+      }
+      const { added, dup } = r;
+      update(r.project);
+      projectRef.current = r.project;
       setTimeout(() => {
         let msg = `사진 ${added}장을 추가했습니다`;
         if (dup) msg += ` · 중복 ${dup}장 제외`;
         if (skipped.length) {
-          const heic = skipped.filter((s) => s.reason === 'HEIC' || s.reason === 'HEIF').length;
-          msg += ` · 지원하지 않는 형식 ${skipped.length}장 제외`;
-          if (heic) msg += ' (아이폰 HEIC는 JPG로 변환 후 추가해 주세요)';
+          const heicFail = skipped.filter((s) => /HEIC/.test(s.reason)).length;
+          msg += ` · 읽을 수 없는 파일 ${skipped.length}장 제외`;
+          if (heicFail) msg += ` (HEIC ${heicFail}장 변환 실패)`;
+          else if (skipped.some((s) => /RAW|CR2|NEF|ARW|DNG|PSD|TIF/.test(s.reason))) msg += ' (RAW·PSD·TIFF는 JPG로 저장해 넣어 주세요)';
         }
         toast(msg, skipped.length ? 'warn' : 'ok');
       }, 0);
@@ -155,8 +161,12 @@ export default function App() {
         if (!isDesktop) return fileInput.current?.click();
         const folder = await api.pickFolder();
         if (!folder) return;
-        busyToast();
-        addItems(await importPaths([folder], recursive));
+        setBusy({ text: '사진을 불러오는 중…', done: 0, total: 0, scan: true });
+        try {
+          addItems(await importPaths([folder], recursive));
+        } finally {
+          setBusy(null);
+        }
       },
       importFiles: async () => {
         if (!isDesktop) return fileInput.current?.click();
@@ -206,7 +216,7 @@ export default function App() {
         let fixed = new Map();
         const weak = projectRef.current.items.filter((i) => i.type === 'photo' && (!i.dateSource || i.dateSource === 'file') && !/^(blob:|data:)/.test(i.path));
         if (isDesktop && api.photoDates && weak.length) {
-          const r = await api.photoDates(weak.map((i) => i.path));
+          const r = await api.photoDates(weak.map((i) => i.origPath || i.path));
           weak.forEach((it, k) => r[k] && r[k].dateSource !== 'file' && fixed.set(it.id, r[k]));
         }
         update((p) => sortPhotos({ ...p, items: p.items.map((i) => (fixed.has(i.id) ? { ...i, ...fixed.get(i.id) } : i)) }, 'date'));
@@ -297,6 +307,7 @@ export default function App() {
 
   const onDropFiles = useCallback(
     async (files, atIndex = null) => {
+      if (busyRef.current) return; // 분석·불러오기 중에는 무시 (결과가 덮여 사라지지 않게)
       if (isDesktop) {
         const paths = [...files].map((f) => api.pathForFile(f)).filter(Boolean);
         const audioPaths = paths.filter((p) => /\.(mp3|m4a|aac|wav|ogg|flac)$/i.test(p));
@@ -321,7 +332,25 @@ export default function App() {
       setPhotoMeta(ph.path, { missing: !ex[i] });
       if (!ex[i]) miss++;
     });
-    if (miss) toast(`원본 사진 ${miss}장을 찾을 수 없습니다 (이동 또는 삭제됨)`, 'error');
+    if (miss) toast(`원본 사진 ${miss}장을 찾을 수 없습니다 (폴더를 옮겼거나 삭제됨)`, 'error', { label: '사진 폴더 다시 찾기', run: () => relink() });
+  };
+
+  /** 사진 폴더를 옮긴 경우: 새 위치의 폴더를 고르면 같은 이름의 사진을 찾아 다시 연결 */
+  const relink = async () => {
+    const p0 = projectRef.current;
+    const photos = p0.items.filter((i) => i.type === 'photo');
+    const ex = await api.exists(photos.map((i) => i.path));
+    const missing = photos.filter((_, k) => !ex[k]).map((i) => ({ path: i.path, name: i.name, size: i.size }));
+    if (!missing.length) return toast('찾을 수 없는 사진이 없습니다');
+    const folder = await api.pickFolder();
+    if (!folder) return;
+    setBusy({ text: '옮겨진 사진을 찾는 중…', done: 0, total: 0 });
+    const map = await api.relinkPhotos(missing, folder).finally(() => setBusy(null));
+    const n = Object.keys(map).length;
+    if (!n) return toast('그 폴더에서 같은 이름의 사진을 찾지 못했습니다', 'warn');
+    update((p) => ({ ...p, items: p.items.map((i) => (map[i.path] ? { ...i, path: map[i.path] } : i)) }));
+    for (const np of Object.values(map)) setPhotoMeta(np, { missing: false });
+    toast(n === missing.length ? `사진 ${n}장을 모두 다시 연결했습니다` : `사진 ${n}장을 다시 연결했습니다 · ${missing.length - n}장은 아직 찾지 못함`, n === missing.length ? 'ok' : 'warn');
   };
 
   const save = async (as = false) => {
@@ -330,7 +359,16 @@ export default function App() {
       return false;
     }
     const json = JSON.stringify({ app: 'MEMORIA', savedAt: new Date().toISOString(), project }, null, 1);
-    const p = await api.saveProject(json, as ? null : store.filePath, project.name);
+    let p = null;
+    try {
+      p = await api.saveProject(json, as ? null : store.filePath, project.name);
+    } catch (e) {
+      p = { error: '저장하지 못했습니다: ' + (e?.message || e) };
+    }
+    if (p && p.error) {
+      toast(p.error, 'error', { label: '다른 이름으로 저장', run: () => saveRef.current(true) });
+      return false;
+    }
     if (p) {
       store.markSaved(p);
       toast('프로젝트를 저장했습니다');
@@ -367,12 +405,11 @@ export default function App() {
       setBusy(null);
       if (busyCancel.current) return toast('자동 선별을 취소했습니다', 'info');
     }
-    let plan = null;
-    update((p) => {
-      const withQ = qs.size ? { ...p, items: p.items.map((i) => (qs.has(i.id) ? { ...i, q: qs.get(i.id) } : i)) } : p;
-      plan = planSelection(withQ, target, per);
-      return plan.project;
-    });
+    const p0 = projectRef.current;
+    const withQ = qs.size ? { ...p0, items: p0.items.map((i) => (qs.has(i.id) ? { ...i, q: qs.get(i.id) } : i)) } : p0;
+    const plan = planSelection(withQ, target, per);
+    update(plan.project);
+    projectRef.current = plan.project;
     setTimeout(() => {
       if (!plan) return;
       setStep('photos');
@@ -386,6 +423,113 @@ export default function App() {
     }, 0);
   };
   autoSelectRef.current = autoSelect;
+
+  // .memoria 파일 더블클릭으로 실행/전달된 경우 열기
+  const openRef = useRef(null);
+  useEffect(() => {
+    if (!isDesktop || !api.pendingOpen) return;
+    api.pendingOpen().then((p) => p && openRef.current(p));
+    api.onOpenFile?.((p) => openRef.current(p));
+  }, []);
+
+  // ------------------------------------------------ 종료 전 저장 확인 · 가져오기 진행률
+  const hasUnsaved = (project.items.length > 0 || project.music.tracks.length > 0) && (store.dirty || !store.filePath);
+  useEffect(() => {
+    if (isDesktop && api.setDirty) api.setDirty(hasUnsaved);
+  }, [hasUnsaved]);
+  const saveRef = useRef(null);
+  saveRef.current = save;
+  useEffect(() => {
+    if (!isDesktop || !api.onSaveAndQuit) return;
+    api.onSaveAndQuit(async () => {
+      if (await saveRef.current(false)) api.quitNow();
+    });
+    const off = api.onScanProgress?.(({ done, total }) => setBusy((b) => (b && b.scan ? { ...b, done, total } : b)));
+    return off;
+  }, []);
+
+  // ------------------------------------------------ 매직 버튼
+  const magicRunning = useRef(false);
+  const runMagic = async ({ intro, music, source }) => {
+    if (magicRunning.current) return;
+    magicRunning.current = true;
+    try {
+      await runMagicInner({ intro, music, source });
+    } finally {
+      magicRunning.current = false;
+      setBusy(null);
+    }
+  };
+  const runMagicInner = async ({ intro, music, source }) => {
+    setShowMagic(false);
+    previewRef.current?.pause?.();
+    let newItems = null;
+    const fresh = source === 'folder';
+    if (fresh) {
+      if (!isDesktop) return toast('PC 버전에서 폴더를 고를 수 있습니다', 'warn');
+      const folder = await api.pickFolder();
+      if (!folder) return;
+      setBusy({ text: '사진을 불러오는 중…', done: 0, total: 0, scan: true });
+      const r = await importPaths([folder], true);
+      setBusy(null);
+      if (!r.items.length) return toast('그 폴더에서 사진을 찾지 못했습니다', 'warn');
+      newItems = r.items;
+    }
+    // 음악 준비 (받는 동안에도 화면을 잠가 편집이 사라지지 않게)
+    let track = null;
+    if (music.kind === 'keep') track = 'keep';
+    else if (music.kind === 'file') {
+      const paths = await api.pickAudio();
+      if (!paths?.[0]) return toast('음악 파일을 고르지 않아 매직을 취소했습니다', 'info');
+      setBusy({ text: '음악을 준비하는 중…', done: 0, total: 0, scan: true });
+      try {
+        track = { path: paths[0], name: baseName(paths[0]), duration: await audio.load(paths[0]) };
+      } catch {
+        setBusy(null);
+        return toast('그 음악 파일을 읽을 수 없습니다', 'error');
+      }
+    } else if (music.kind === 'lib') {
+      setBusy({ text: '음악을 준비하는 중…', done: 0, total: 0, scan: true });
+      try {
+        const t = music.track.local ? music.track : await api.musicDownload(music.track.id);
+        const duration = await audio.load(t.path);
+        track = { path: t.path, name: t.title, duration, libId: t.id, license: t.license, ...(t.needsCredit ? { needsCredit: true, credit: t.credit } : {}) };
+      } catch {
+        setBusy(null);
+        return toast('음악을 받지 못했습니다. 인터넷 연결을 확인하거나 다른 곡을 골라 주세요.', 'error');
+      }
+    }
+    setBusy(null);
+    // 화질 분석 (좋은 사진 고르기·대표 사진에 사용)
+    const pool = newItems || projectRef.current.items;
+    const need = pool.filter((i) => i.type === 'photo' && typeof i.q !== 'number' && !i.skip);
+    let qs = new Map();
+    if (need.length) {
+      busyCancel.current = false;
+      setBusy({ text: '사진을 살펴보는 중… (화질·밝기)', done: 0, total: need.length });
+      qs = await analyzePhotos(need, (d, t) => (d % 3 === 0 || d === t ? setBusy((b) => b && { ...b, done: d }) : null), () => busyCancel.current);
+      setBusy(null);
+      if (busyCancel.current) return toast('매직을 취소했습니다', 'info');
+    }
+    // 기다리는 동안 바뀐 내용이 있으면 최신 상태를 기준으로
+    const items = (newItems || projectRef.current.items).map((i) => (qs.has(i.id) ? { ...i, q: qs.get(i.id) } : i));
+    const r = magicProject({ ...projectRef.current, items }, { intro, track, fresh });
+    const info = r.info;
+    update(r.project);
+    projectRef.current = r.project;
+    setSelected(new Set());
+    setStep('photos');
+    setTimeout(() => {
+      if (!info) return;
+      toast(
+        `✨ 완성! ${fmtTime(info.total)} 영상 · 사진 ${info.used}장${info.used < info.all ? ` (${info.all}장 중 고름)` : ''}${info.chapters ? ` · 챕터 ${info.chapters}개` : ''}. 마음에 들면 ‘영상 만들기’를 누르세요.`,
+        'ok',
+        { label: '되돌리기', run: () => undo() },
+      );
+      previewRef.current?.seek(0);
+      previewRef.current?.play();
+    }, 120);
+  };
 
   // ------------------------------------------------ 새로 만들기
   const [askNew, setAskNew] = useState(false);
@@ -403,13 +547,28 @@ export default function App() {
     toast('새 프로젝트를 시작했습니다');
   };
   const requestNew = () => (unsaved ? setAskNew(true) : startNew());
-  const saveThenNew = async () => {
-    if (await save(false)) startNew();
+  // askNew: true = 새로 만들기, { open: 경로|null } = 다른 프로젝트 열기
+  const proceedAsk = () => {
+    const a = askNew;
+    setAskNew(false);
+    if (a && typeof a === 'object') open(a.open || undefined);
+    else startNew();
   };
-  const open = async () => {
+  const saveThenNew = async () => {
+    if (await save(false)) proceedAsk();
+  };
+  const requestOpen = (given) => {
+    const g = typeof given === 'string' ? given : null;
+    if (unsaved) setAskNew({ open: g });
+    else open(g || undefined);
+  };
+  const open = async (given) => {
     if (!isDesktop) return;
-    const r = await api.openProject();
+    const r = await api.openProject(typeof given === 'string' ? given : undefined);
     if (!r) return;
+    if (r.error) return toast(r.error, 'error');
+    if (r.fromBackup) toast('프로젝트 파일이 손상되어 직전 저장본(.bak)으로 열었습니다', 'warn');
+    setShowTemplates(false);
     try {
       const data = JSON.parse(r.json);
       let p = normalizeProject(data.project || data);
@@ -438,6 +597,8 @@ export default function App() {
       return p;
     }
   };
+
+  openRef.current = requestOpen;
 
   // ------------------------------------------------ 선택 / 탐색
   const seekToKey = useCallback((key) => {
@@ -542,7 +703,13 @@ export default function App() {
   useEffect(() => {
     const onKey = (e) => {
       const tag = e.target.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || exportJob || showTemplates || askNew || busy) return;
+      // Ctrl+S는 글자를 입력하는 중에도 저장 (가장 흔히 누르는 순간)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !exportJob && !busy) {
+        e.preventDefault();
+        save(e.shiftKey);
+        return;
+      }
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || exportJob || showTemplates || askNew || busy || showMagic || showHelp) return;
       const mod = e.ctrlKey || e.metaKey;
       if (e.code === 'Space') {
         e.preventDefault();
@@ -624,7 +791,7 @@ export default function App() {
           className="project-name"
           value={project.name}
           onChange={(e) => update((p) => ({ ...p, name: e.target.value }), 'name')}
-          onKeyDown={(e) => e.stopPropagation()}
+          onKeyDown={keepSave}
           spellCheck={false}
           title="프로젝트 이름"
         />
@@ -633,18 +800,22 @@ export default function App() {
           <Button icon="undo" onClick={undo} disabled={!store.past.length} title="실행 취소 (Ctrl+Z)" />
           <Button icon="redo" onClick={redo} disabled={!store.future.length} title="다시 실행 (Ctrl+Shift+Z)" />
           <span className="sep" />
+          <Button icon="sparkle" variant="magic" onClick={() => setShowMagic(true)} title="인트로·음악·사진만 고르면 나머지는 자동으로">
+            매직
+          </Button>
           <Button icon="sparkle" onClick={() => setShowTemplates(true)} title="영상 종류(템플릿) 고르기">
             템플릿
           </Button>
           <Button icon="plus" onClick={requestNew} title="지금 작업을 닫고 새 영상 만들기 (Ctrl+N)">
             새로 만들기
           </Button>
-          <Button icon="open" onClick={open} title="프로젝트 열기">
+          <Button icon="open" onClick={requestOpen} title="프로젝트 열기">
             열기
           </Button>
           <Button icon="save" onClick={() => save(false)} title="프로젝트 저장 (Ctrl+S)">
             저장
           </Button>
+          <Button icon="info" onClick={() => setShowHelp(true)} title="도움말 · 문제 해결 · 라이선스" />
           <Button icon="export" variant="primary" onClick={() => setStep('export')}>
             영상 만들기
           </Button>
@@ -711,6 +882,9 @@ export default function App() {
                   사진 파일 선택
                 </Button>
               </div>
+              <Button icon="sparkle" variant="magic" size="lg" onClick={() => setShowMagic(true)}>
+                매직으로 한 번에 만들기
+              </Button>
               <button className="link" onClick={() => setShowTemplates(true)}>
                 ✦ 영상 종류(웨딩·생일·여행·행사 등) 먼저 고르기
               </button>
@@ -784,21 +958,27 @@ export default function App() {
         ))}
       </div>
 
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      {showMagic && <MagicModal project={project} onClose={() => setShowMagic(false)} onRun={runMagic} />}
       {busy && (
         <div className="modal-back">
           <div className="modal busy-modal" role="dialog" aria-modal="true">
             <div className="modal-title">
               <span className="spinner" /> {busy.text}
             </div>
-            <div className="busy-bar">
-              <i style={{ width: `${(busy.done / Math.max(1, busy.total)) * 100}%` }} />
-            </div>
-            <p className="hint small">
-              {busy.done} / {busy.total}장 · 한 번 분석한 사진은 다시 분석하지 않습니다.
-            </p>
-            <div className="modal-actions">
-              <Button onClick={() => (busyCancel.current = true)}>취소</Button>
-            </div>
+            {busy.total > 0 && (
+              <>
+                <div className="busy-bar">
+                  <i style={{ width: `${(busy.done / Math.max(1, busy.total)) * 100}%` }} />
+                </div>
+                <p className="hint small">{busy.scan ? `${busy.done} / ${busy.total}개 파일 확인` : `${busy.done} / ${busy.total}장 · 한 번 분석한 사진은 다시 분석하지 않습니다.`}</p>
+              </>
+            )}
+            {!busy.scan && (
+              <div className="modal-actions">
+                <Button onClick={() => (busyCancel.current = true)}>취소</Button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -809,17 +989,17 @@ export default function App() {
               <Icon name="warn" size={20} /> 지금 작업을 저장할까요?
             </div>
             <p className="hint">
-              ‘{project.name}’에 저장하지 않은 변경 사항이 있습니다. 새로 만들면 지금 화면의 사진·문구·음악 설정이 모두 비워집니다.
+              ‘{project.name}’에 저장하지 않은 변경 사항이 있습니다. {typeof askNew === 'object' ? '다른 프로젝트를 열면 지금 작업이 닫힙니다.' : '새로 만들면 지금 화면의 사진·문구·음악 설정이 모두 비워집니다.'}
               {!isDesktop && ' (웹 미리보기 버전은 저장할 수 없습니다)'}
             </p>
             <div className="modal-actions">
               <Button onClick={() => setAskNew(false)}>취소</Button>
-              <Button variant="danger" onClick={startNew}>
+              <Button variant="danger" onClick={proceedAsk}>
                 저장 안 함
               </Button>
               {isDesktop && (
                 <Button icon="save" variant="primary" onClick={saveThenNew}>
-                  저장하고 새로 만들기
+                  {typeof askNew === 'object' ? '저장하고 열기' : '저장하고 새로 만들기'}
                 </Button>
               )}
             </div>
