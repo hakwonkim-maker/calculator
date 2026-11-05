@@ -5,6 +5,7 @@ import { buildTimeline, activeAt } from '../engine/timeline.js';
 import { planSelection, clearSelection } from '../engine/select.js';
 import { analyzePhotos } from '../engine/quality.js';
 import { magicProject } from '../engine/magic.js';
+import { makeManualMontage, releaseMontages } from '../engine/edit.js';
 import { MagicModal } from './Magic.jsx';
 import { HelpModal } from './Help.jsx';
 import { AudioPreview } from '../engine/audio.js';
@@ -361,7 +362,7 @@ export default function App() {
     const json = JSON.stringify({ app: 'MEMORIA', savedAt: new Date().toISOString(), project }, null, 1);
     let p = null;
     try {
-      p = await api.saveProject(json, as ? null : store.filePath, project.name);
+      p = await api.saveProject(json, as ? null : store.filePath, project.name, store.filePath);
     } catch (e) {
       p = { error: '저장하지 못했습니다: ' + (e?.message || e) };
     }
@@ -371,7 +372,7 @@ export default function App() {
     }
     if (p) {
       store.markSaved(p);
-      toast('프로젝트를 저장했습니다');
+      toast(as ? `‘${baseName(p)}’(으)로 저장했습니다 · 이제부터 이 파일에 저장됩니다` : '프로젝트를 저장했습니다');
       return true;
     }
     return false;
@@ -600,6 +601,55 @@ export default function App() {
 
   openRef.current = requestOpen;
 
+  // ------------------------------------------------ 타임라인 우클릭 메뉴
+  const onCtxAction = async (type, { ids, style, index, kind, before, value }) => {
+    const p = projectRef.current;
+    if (type === 'montage') {
+      const r = makeManualMontage(p, ids, style);
+      if (r.error) return toast(r.error, 'warn');
+      update(r.project);
+      projectRef.current = r.project;
+      const name = style === 'auto' ? '자동 효과' : MONTAGE_STYLES[style]?.name;
+      toast(
+        `사진 ${r.count}장을 몽타주${r.groups > 1 ? ` ${r.groups}개` : ''}로 만들었습니다 (${name})` + (r.captioned ? ` · 자막이 있는 사진 ${r.captioned}장은 몽타주 안에서는 자막이 보이지 않습니다` : ''),
+        r.captioned ? 'warn' : 'ok',
+      );
+      const first = r.project.items.find((i) => ids.includes(i.id) && !i.skip && i.type === 'photo');
+      if (first) setTimeout(() => seekToKey(first.id), 60);
+    } else if (type === 'release') {
+      const r = releaseMontages(p, tlRef.current, ids);
+      if (!r.released) return toast('선택한 사진은 몽타주에 들어 있지 않습니다', 'info');
+      update(r.project);
+      toast(`몽타주 ${r.released}개를 풀었습니다 · 사진이 한 장씩 나옵니다`);
+    } else if (type === 'add') {
+      if (!isDesktop) return toast('PC 버전에서 사용할 수 있습니다', 'warn');
+      let res = null;
+      if (kind === 'folder') {
+        const folder = await api.pickFolder();
+        if (!folder) return;
+        setBusy({ text: '사진을 불러오는 중…', done: 0, total: 0, scan: true });
+        res = await importPaths([folder], true).finally(() => setBusy(null));
+      } else {
+        const paths = await api.pickPhotos();
+        if (!paths?.length) return;
+        res = await importPaths(paths);
+      }
+      // 그 사이 목록이 바뀌었을 수 있으므로 기준 사진의 현재 위치로 다시 계산
+      const anchorId = p.items[index - 1]?.id;
+      const cur = projectRef.current.items;
+      const at = index <= 0 ? 0 : anchorId ? cur.findIndex((i) => i.id === anchorId) + 1 : cur.length;
+      addItems(res, at <= 0 ? 0 : at);
+    } else if (type === 'chapter') {
+      actions.addChapter(before, true);
+    } else if (type === 'skip') {
+      const set = new Set(ids);
+      update((q) => ({ ...q, items: q.items.map((i) => (set.has(i.id) && i.type === 'photo' ? { ...i, skip: value ? true : undefined } : i)) }));
+      toast(value ? `사진 ${ids.length}장을 영상에서 뺐습니다 (흐리게 남아 다시 넣을 수 있음)` : `사진 ${ids.length}장을 영상에 다시 넣었습니다`);
+    } else if (type === 'delete') {
+      actions.deleteSelected();
+    }
+  };
+
   // ------------------------------------------------ 선택 / 탐색
   const seekToKey = useCallback((key) => {
     const t = tlRef.current;
@@ -812,8 +862,11 @@ export default function App() {
           <Button icon="open" onClick={requestOpen} title="프로젝트 열기">
             열기
           </Button>
-          <Button icon="save" onClick={() => save(false)} title="프로젝트 저장 (Ctrl+S)">
+          <Button icon="save" onClick={() => save(false)} title={store.filePath ? `저장 (Ctrl+S) · ${baseName(store.filePath)}` : '프로젝트 저장 (Ctrl+S)'}>
             저장
+          </Button>
+          <Button icon="saveAs" onClick={() => save(true)} title="다른 이름으로 저장 (Ctrl+Shift+S) — 새 파일로 저장하고 이후 그 파일로 작업">
+            다른 이름으로
           </Button>
           <Button icon="info" onClick={() => setShowHelp(true)} title="도움말 · 문제 해결 · 라이선스" />
           <Button icon="export" variant="primary" onClick={() => setStep('export')}>
@@ -927,6 +980,7 @@ export default function App() {
           onSetAllTransitions={onSetAllTransitions}
           onDropFiles={onDropFiles}
           onAddPhotos={actions.importFiles}
+          onCtxAction={onCtxAction}
         />
       </footer>
 

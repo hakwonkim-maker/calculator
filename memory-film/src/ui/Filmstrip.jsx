@@ -7,6 +7,7 @@ import { isLowRes, photoDims } from './logic.js';
 import { Icon } from './controls.jsx';
 import { MONTAGE_STYLES } from '../engine/presets.js';
 import { enhancePolicy } from '../engine/enhance.js';
+import { TimelineMenu } from './TimelineMenu.jsx';
 
 /** 화면에 보일 때만 썸네일을 만든다 (사진 수백 장도 가볍게) */
 function useInView(ref, enabled) {
@@ -137,7 +138,15 @@ const TransitionChip = memo(function TransitionChip({ resolved, itemId, transiti
   );
 });
 
-export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect, onReorder, onSetTransition, onSetAllTransitions, onSelectSpecial, onDropFiles, onAddPhotos }) {
+export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect, onReorder, onSetTransition, onSetAllTransitions, onSelectSpecial, onDropFiles, onAddPhotos, onCtxAction }) {
+  const [ctx, setCtx] = useState(null); // 우클릭 메뉴 위치
+  const openCtx = (e, id) => {
+    e.preventDefault();
+    // 선택되지 않은 카드를 우클릭하면 그 카드만 선택 (탐색기와 같은 동작)
+    if (!selected.has(id)) cb.current.onSelect(id, {});
+    setMenu(null);
+    setCtx({ x: e.clientX, y: e.clientY });
+  };
   const [dragId, setDragId] = useState(null);
   // 카드·전환 칩 메모이제이션이 깨지지 않도록 안정적인 콜백 사용
   const cb = useRef({});
@@ -211,6 +220,7 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
       className={'filmstrip' + (compact ? ' compact' : '')}
       ref={scrollRef}
       onWheel={(e) => {
+        if (ctx) setCtx(null); // 사용자가 스크롤하면 메뉴 닫기 (선택에 따른 자동 스크롤로는 닫지 않음)
         // 일반 마우스 휠(세로)로도 가로 스크롤
         if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
       }}
@@ -242,7 +252,7 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
           return (
             <React.Fragment key={it.id}>
               {dropIdx === i && <div className="drop-marker" />}
-              <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')}>
+              <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')} onContextMenu={(e) => openCtx(e, it.id)}>
                 <Card item={it} index={'–'} selected={selected.has(it.id)} active={false} onSelect={select} onDragStart={onDragStart} enh={enhancePolicy(it, project.style.enhance)} />
               </div>
             </React.Fragment>
@@ -258,7 +268,7 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
         return (
           <React.Fragment key={it.id}>
             {dropIdx === i && <div className="drop-marker" />}
-            <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')} >
+            <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')} onContextMenu={(e) => openCtx(e, it.id)}>
               <Card item={it} index={it.type === 'photo' ? photoNo : '§'} selected={selected.has(it.id)} active={activeKey === it.id || (grp && activeKey === grp.key)} onSelect={select} onDragStart={onDragStart} montage={grp ? MONTAGE_STYLES[grp.style]?.name : null} enh={it.type === 'photo' ? enhancePolicy(it, project.style.enhance) : null} />
             </div>
             {sameGroup && <div className="montage-link" title="몽타주로 한 화면에 함께 나오는 사진" />}
@@ -290,6 +300,7 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
           </div>
         </div>
       )}
+      {ctx && <TimelineMenu x={ctx.x} y={ctx.y} project={project} tl={tl} selected={selected} onAction={(t, p) => onCtxAction?.(t, p)} onClose={() => setCtx(null)} />}
     </div>
   );
 }

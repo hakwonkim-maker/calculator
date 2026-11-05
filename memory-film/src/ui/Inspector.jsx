@@ -38,30 +38,32 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
     const g0 = tl.byItem?.get(sel[0]?.id);
     const oneGroup = g0?.type === 'group' && sel.length === g0.items.length && sel.every((i) => tl.byItem.get(i.id) === g0);
     const setAll = (patch) => update((p) => ({ ...p, items: p.items.map((i) => (selected.has(i.id) ? { ...i, ...patch } : i)) }));
+    // 직접 만든 몽타주: 묶음의 모든 사진에 같은 값
+    const setGroup = (patch) => update((p) => ({ ...p, items: p.items.map((i) => (g0?.manual && i.mg === g0.mgId ? { ...i, ...patch } : i)) }));
     return (
       <div className="inspector">
         {oneGroup && (
-          <Section title="몽타주 장면" hint={`사진 ${sel.length}장이 한 화면에 함께 나오는 장면입니다 (${g0.dur.toFixed(1)}초).`}>
+          <Section title={g0.manual ? '몽타주 장면 (직접 만듦)' : '몽타주 장면'} hint={`사진 ${sel.length}장이 한 화면에 함께 나오는 장면입니다 (${g0.dur.toFixed(1)}초). 타임라인에서 우클릭해도 편집할 수 있습니다.`}>
             <Field label="몽타주 효과 바꾸기">
               <div className="chip-row tight">
                 {Object.entries(MONTAGE_STYLES).map(([id, m]) => (
                   <button
                     key={id}
                     className={'chip' + (g0.style === id ? ' on' : '')}
-                    onClick={() => update((p) => updateItem(p, g0.items[0].id, { montage: id }))}
+                    onClick={() => (g0.manual ? setGroup({ mgStyle: id }) : update((p) => updateItem(p, g0.items[0].id, { montage: id })))}
                   >
                     {m.name}
                   </button>
                 ))}
               </div>
             </Field>
-            {g0.custom && (
-              <button className="link" onClick={() => update((p) => updateItem(p, g0.items[0].id, { montage: undefined }))}>
+            {(g0.custom || (g0.manual && sel[0]?.mgStyle)) && (
+              <button className="link" onClick={() => (g0.manual ? setGroup({ mgStyle: undefined }) : update((p) => updateItem(p, g0.items[0].id, { montage: undefined })))}>
                 자동으로 고른 효과로 되돌리기
               </button>
             )}
             <div className="btn-row">
-              <Button icon="photo" variant="soft" size="sm" onClick={() => update((p) => updateItem(p, g0.items[0].id, { montage: 'off' }))} title="이 사진들을 한 장씩 크게 보여 줍니다">
+              <Button icon="photo" variant="soft" size="sm" onClick={() => (g0.manual ? setGroup({ mg: undefined, mgStyle: undefined }) : update((p) => updateItem(p, g0.items[0].id, { montage: 'off' })))} title="이 사진들을 한 장씩 크게 보여 줍니다">
                 몽타주 풀기
               </Button>
               <Button icon="trash" variant="danger" size="sm" onClick={() => setAll({ skip: true })} title="이 사진들을 영상에서 뺍니다 (파일은 그대로, 다시 넣을 수 있음)">

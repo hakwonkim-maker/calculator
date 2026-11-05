@@ -338,12 +338,14 @@ ipcMain.handle('dialog:saveVideo', async (_e, defaultName) => {
 });
 
 // ---------------- 프로젝트 저장/열기 ----------------
-ipcMain.handle('project:save', async (_e, json, filePath, defaultName) => {
+ipcMain.handle('project:save', async (_e, json, filePath, defaultName, near) => {
   let p = filePath;
   if (!p) {
+    // 다른 이름으로 저장: 지금 파일이 있는 폴더에서 시작 (처음 저장이면 문서 폴더)
+    const dir = near ? path.dirname(near) : app.getPath('documents');
     const r = await dialog.showSaveDialog(win, {
-      title: '프로젝트 저장',
-      defaultPath: path.join(app.getPath('documents'), (defaultName || '기념영상') + '.memoria'),
+      title: near ? '다른 이름으로 저장' : '프로젝트 저장',
+      defaultPath: path.join(dir, (defaultName || '기념영상') + (near ? ' (사본)' : '') + '.memoria'),
       filters: [{ name: 'MEMORIA 프로젝트', extensions: ['memoria'] }],
     });
     if (r.canceled) return null;

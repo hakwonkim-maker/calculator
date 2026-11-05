@@ -48,10 +48,16 @@ function appearAt(seg, i, n, spread = 0.6) {
 // ---------------------------------------------------------------- 모자이크 그리드
 function gridLayout(n, landscape) {
   // 정규화 좌표 [x, y, w, h]
+  // 2~8장: 장수마다 빈칸 없이 꽉 차는 배치
   let cells;
-  if (n <= 4) cells = [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]];
+  const t = 1 / 3;
+  if (n <= 2) cells = [[0, 0, 0.5, 1], [0.5, 0, 0.5, 1]];
+  else if (n === 3) cells = [[0, 0, 0.5, 1], [0.5, 0, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]];
+  else if (n === 4) cells = [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]];
   else if (n === 5) cells = [[0, 0, 0.5, 1], [0.5, 0, 0.25, 0.5], [0.75, 0, 0.25, 0.5], [0.5, 0.5, 0.25, 0.5], [0.75, 0.5, 0.25, 0.5]];
-  else cells = [[0, 0, 1 / 3, 0.5], [1 / 3, 0, 1 / 3, 0.5], [2 / 3, 0, 1 / 3, 0.5], [0, 0.5, 1 / 3, 0.5], [1 / 3, 0.5, 1 / 3, 0.5], [2 / 3, 0.5, 1 / 3, 0.5]];
+  else if (n === 6) cells = [[0, 0, t, 0.5], [t, 0, t, 0.5], [2 * t, 0, t, 0.5], [0, 0.5, t, 0.5], [t, 0.5, t, 0.5], [2 * t, 0.5, t, 0.5]];
+  else if (n === 7) cells = [[0, 0, 0.4, 1], ...[0, 1].flatMap((r) => [0, 1, 2].map((c) => [0.4 + c * 0.2, r * 0.5, 0.2, 0.5]))];
+  else cells = [0, 1].flatMap((r) => [0, 1, 2, 3].map((c) => [c * 0.25, r * 0.5, 0.25, 0.5]));
   return landscape ? cells : cells.map(([x, y, w, h]) => [y, x, h, w]);
 }
 
@@ -104,8 +110,14 @@ function drawGrid(ctx, seg, tau, env) {
 
 // ---------------------------------------------------------------- 폴라로이드
 const POLA_SLOTS = [
-  [-0.27, -0.12, -0.12], [0.25, -0.16, 0.1], [-0.2, 0.2, 0.08], [0.28, 0.18, -0.09], [0.0, 0.02, 0.03], [-0.05, -0.2, -0.05],
+  [-0.27, -0.12, -0.12], [0.25, -0.16, 0.1], [-0.2, 0.2, 0.08], [0.28, 0.18, -0.09], [0.0, 0.02, 0.03], [-0.05, -0.2, -0.05], [0.36, 0.0, 0.12], [-0.36, 0.04, -0.1],
 ];
+// 적은 장수는 겹치지 않게 넓게 배치
+const POLA_FEW = {
+  1: [[0, 0, -0.03]],
+  2: [[-0.2, -0.02, -0.08], [0.2, 0.03, 0.07]],
+  3: [[-0.28, 0.02, -0.1], [0, -0.05, 0.04], [0.28, 0.03, 0.09]],
+};
 
 function drawPolaroids(ctx, seg, tau, env) {
   const { W, H, u, theme } = env;
@@ -113,7 +125,7 @@ function drawPolaroids(ctx, seg, tau, env) {
   drawBokeh(ctx, W, H, tau, { seed: 'pm' + seg.key, discs: 8, sparks: 22, color: theme.particle, alpha: theme.dark ? 0.6 : 0.4 });
   const n = seg.items.length;
   const S = Math.min(W, H);
-  const cardW = S * (W >= H ? 0.42 : 0.5);
+  const cardW = S * (W >= H ? (n >= 6 ? 0.36 : 0.42) : n >= 6 ? 0.42 : 0.5);
   const pad = cardW * 0.06;
   const imgW = cardW - pad * 2;
   const cardH = pad + imgW + cardW * 0.22;
@@ -126,7 +138,7 @@ function drawPolaroids(ctx, seg, tau, env) {
   ctx.scale(z, z);
   ctx.translate(-W / 2, -H / 2);
   for (let i = 0; i < n; i++) {
-    const [nx, ny, rot] = POLA_SLOTS[i % POLA_SLOTS.length];
+    const [nx, ny, rot] = (POLA_FEW[n] || POLA_SLOTS)[i % (POLA_FEW[n] || POLA_SLOTS).length];
     const t0 = appearAt(seg, i, n, 0.55);
     const e = prog(tau, t0, t0 + 0.7);
     if (e <= 0) continue;
@@ -178,17 +190,23 @@ function drawSplit(ctx, seg, tau, env) {
     const e = easeOutCubic(prog(tau, t0, t0 + 0.85));
     if (e <= 0) continue;
     const dir = i % 2 ? 1 : -1;
+    // 4장까지는 한 줄, 5장 이상은 두 줄로 나눠 패널이 너무 가늘어지지 않게
+    const lines = n > 4 ? 2 : 1;
+    const per = Math.ceil(n / lines);
+    const li = Math.floor(i / per);
+    const k = i % per;
+    const cnt = li === lines - 1 ? n - per * (lines - 1) : per;
     let x, y, w, h;
     if (land) {
-      w = (W - gap * (n - 1)) / n;
-      h = H;
-      x = i * (w + gap);
-      y = (1 - e) * dir * H;
+      w = (W - gap * (cnt - 1)) / cnt;
+      h = (H - gap * (lines - 1)) / lines;
+      x = k * (w + gap);
+      y = li * (h + gap) + (1 - e) * dir * H;
     } else {
-      w = W;
-      h = (H - gap * (n - 1)) / n;
-      x = (1 - e) * dir * W;
-      y = i * (h + gap);
+      w = (W - gap * (lines - 1)) / lines;
+      h = (H - gap * (cnt - 1)) / cnt;
+      x = li * (w + gap) + (1 - e) * dir * W;
+      y = k * (h + gap);
     }
     const a = asset(env, seg.items[i], true);
     ctx.save();

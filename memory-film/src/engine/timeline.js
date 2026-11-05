@@ -11,7 +11,7 @@ const MONTAGE_ORDER = ['grid', 'polaroid', 'split', 'filmstrip'];
 
 /** 몽타주에 넣어도 되는 사진: 자막·개별 설정이 없는 사진 (개별 설정한 사진은 단독 장면 유지) */
 function montageEligible(it) {
-  return it.type === 'photo' && !it.caption && !it.label && !it.noMontage && !Number(it.duration) && !(it.motion && it.motion !== 'auto') && !(it.transition && it.transition !== 'auto') && !it.focus;
+  return it.type === 'photo' && !it.mg && !it.caption && !it.label && !it.noMontage && !Number(it.duration) && !(it.motion && it.motion !== 'auto') && !(it.transition && it.transition !== 'auto') && !it.focus;
 }
 
 /** 사진이 들어 있던 폴더 이름 (예: 'D:\\사진\\2019_체육대회\\a.jpg' → '2019 체육대회') */
@@ -28,11 +28,40 @@ export function folderOf(it) {
  * 사진 사이사이에 몽타주 장면을 자동 배치 (시드 기반 → 항상 같은 결과).
  * 반환: [{ type:'photo', item } | { type:'group', items, style }] (챕터는 그대로)
  */
+/** 직접 만든 몽타주(같은 mg 값이 이어진 사진들)의 길이 */
+function manualRun(items, i) {
+  const id = items[i].mg;
+  if (!id || items[i].type !== 'photo') return 0;
+  let n = 0;
+  while (i + n < items.length && items[i + n].type === 'photo' && items[i + n].mg === id) n++;
+  return n;
+}
+/** 직접 만든 몽타주의 '자동' 효과: 장수에 어울리는 효과 중 하나 (몽타주마다 고정) */
+export function manualStyleFor(n, id, chosen) {
+  if (chosen && MONTAGE_STYLES[chosen]) return chosen;
+  const fit = n <= 3 ? ['split', 'filmstrip'] : n <= 5 ? ['grid', 'polaroid', 'split'] : ['grid', 'filmstrip', 'polaroid'];
+  return fit[hashStr(String(id)) % fit.length];
+}
+const manualGroup = (items, i, n) => {
+  const it = items[i];
+  return { type: 'group', items: items.slice(i, i + n), style: manualStyleFor(n, it.mg, it.mgStyle), manual: true, mgId: it.mg };
+};
+
 export function planMontage(items, style) {
   const freq = MONTAGE_FREQ[style.montage || 'normal'];
   const out = [];
   if (!freq || !freq.gap) {
-    for (const it of items) out.push({ type: it.type, item: it });
+    // 자동 몽타주는 끔 — 직접 만든 몽타주만
+    for (let i = 0; i < items.length; ) {
+      const n = manualRun(items, i);
+      if (n >= 2) {
+        out.push(manualGroup(items, i, n));
+        i += n;
+      } else {
+        out.push({ type: items[i].type, item: items[i] });
+        i++;
+      }
+    }
     return out;
   }
   const r = rng(hashStr(`${style.seed || 1}|montage`));
@@ -60,6 +89,14 @@ export function planMontage(items, style) {
       out.push({ type: it.type, item: it });
       since = Math.min(since, gap - 2); // 챕터 바로 뒤에는 몽타주를 미룸
       i++;
+      continue;
+    }
+    // 직접 만든 몽타주: 그대로 한 장면으로, 앞뒤로 자동 몽타주가 바로 붙지 않게 간격을 다시 셈
+    const mn0 = manualRun(items, i);
+    if (mn0 >= 2) {
+      out.push(manualGroup(items, i, mn0));
+      i += mn0;
+      since = 0;
       continue;
     }
     if (since >= gap) {
@@ -92,8 +129,8 @@ export function planMontage(items, style) {
         gap = nextGap();
         continue;
       }
-      // 남은 사진이 너무 적으면(끝부분) 몽타주 대신 일반 사진으로
-      if (n >= mn && items.length - (i + n) >= 2) {
+      // 남은 사진이 너무 적으면(끝부분)·바로 뒤가 직접 만든 몽타주면 자동 몽타주 대신 일반 사진으로
+      if (n >= mn && items.length - (i + n) >= 2 && !items[i + n]?.mg) {
         out.push({ type: 'group', items: items.slice(i, i + n), style: ms, custom: ms !== auto });
         i += n;
         prevStyle = auto; // 사용자가 바꾼 스타일이 다음 몽타주 선택에 영향을 주지 않도록
@@ -235,7 +272,7 @@ function buildCore(project, photoDuration, T) {
   }
   for (const p of planMontage(project.items, st)) {
     const it = p.item;
-    if (p.type === 'group') raw.push({ type: 'group', key: 'g:' + p.items[0].id, items: p.items, style: p.style, custom: p.custom, dur: groupDuration(p.items.length, st.photoDuration, p.style) + T });
+    if (p.type === 'group') raw.push({ type: 'group', key: 'g:' + p.items[0].id, items: p.items, style: p.style, custom: p.custom, manual: p.manual, mgId: p.mgId, dur: groupDuration(p.items.length, st.photoDuration, p.style) + T });
     else if (it.type === 'photo') raw.push({ type: 'photo', key: it.id, item: it, dur: (Number(it.duration) || st.photoDuration) + T });
     else if (it.type === 'chapter') raw.push({ type: 'chapter', key: it.id, item: it, dur: (Number(it.duration) || CHAPTER_DEFAULT_DURATION) + T });
   }

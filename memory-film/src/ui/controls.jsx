@@ -17,6 +17,7 @@ const paths = {
   undo: <path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" {...P} />,
   redo: <path d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3" {...P} />,
   save: <><path d="M5 3h11l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 011-2z" {...P} /><path d="M8 3v5h7M8 21v-7h8v7" {...P} /></>,
+  saveAs: <><path d="M5 3h9l4 4v5" {...P} /><path d="M8 3v5h6M4 5v14a2 2 0 002 2h6" {...P} /><path d="M17 14v7M13.5 17.5h7" {...P} /></>,
   open: <><path d="M3 7a2 2 0 012-2h4l2 2h7a2 2 0 012 2v1" {...P} /><path d="M3 19l3-8h16l-3 8z" {...P} /></>,
   expand: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" {...P} />,
   shuffle: <path d="M3 7h3c4 0 6 10 10 10h5M3 17h3c1.6 0 2.8-1.6 3.8-3.6M21 7h-5c-1.6 0-2.8 1.6-3.8 3.6M18 4l3 3-3 3M18 14l3 3-3 3" {...P} />,

@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('mfApi', {
   pickImage: () => ipcRenderer.invoke('dialog:pickImage'),
   saveVideoDialog: (name) => ipcRenderer.invoke('dialog:saveVideo', name),
   scanPaths: (paths, recursive) => ipcRenderer.invoke('scan:paths', paths, recursive),
-  saveProject: (json, path, name) => ipcRenderer.invoke('project:save', json, path, name),
+  saveProject: (json, path, name, near) => ipcRenderer.invoke('project:save', json, path, name, near),
   openProject: (p) => ipcRenderer.invoke('project:open', p),
   pendingOpen: () => ipcRenderer.invoke('app:pendingOpen'),
   onOpenFile: (fn) => ipcRenderer.on('app:open-file', (_e, p) => fn(p)),

@@ -48,9 +48,15 @@ const scenarios = {
   creditNoOutro: { intro: { style: 'golden', duration: 10 }, outro: { enabled: false }, style: { theme: 'ivory', typography: 'warm' }, music: { tracks: [{ path: 'x.m4a', duration: 120, needsCredit: true, credit: '"Carefree" Kevin MacLeod (incompetech.com) · Licensed under CC BY 4.0' }] } },
   restoreOff: { intro: { enabled: false }, outro: { enabled: false }, style: { theme: 'noir', typography: 'classic', enhance: 'off', motion: 'none', montage: 'off', look: 'natural', vignette: 0, grain: 0 } },
   restoreOn: { intro: { enabled: false }, outro: { enabled: false }, style: { theme: 'noir', typography: 'classic', enhance: 'old', motion: 'none', montage: 'off', look: 'natural', vignette: 0, grain: 0 } },
+  manual: { intro: { enabled: false }, outro: { enabled: false }, style: { theme: 'noir', typography: 'classic', montage: 'off', motion: 'none' }, manual: [[0, 2, 'grid'], [2, 3, 'polaroid'], [5, 7, 'grid'], [12, 8, 'split'], [20, 2, 'polaroid'], [22, 3, 'grid'], [25, 8, 'polaroid'], [33, 6, 'split']] },
   square: { intro: { style: 'mosaic', duration: 10 }, style: { theme: 'navy', typography: 'modern' }, w: 1080, h: 1080 },
 };
 const sc = scenarios[scenario];
+// 직접 만든 몽타주: [시작(사진 순번), 장수, 효과]
+if (sc.manual) {
+  const ph = items.filter((i) => i.type === 'photo');
+  sc.manual.forEach(([a, n, st], g) => ph.slice(a, a + n).forEach((it) => Object.assign(it, { mg: 'm' + g, mgStyle: st, caption: '', label: '' })));
+}
 const proj = { ...base, ...sc, text: { ...base.text, ...(sc.textx || {}) }, style: { ...sc.style } };
 
 const server = await createServer({ configFile: path.join(root, '..', 'vite.config.js'), server: { port: 5199 }, logLevel: 'error' });
