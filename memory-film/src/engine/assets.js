@@ -1,0 +1,273 @@
+// 사진 에셋 관리: 출력 해상도에 맞춘 다운스케일 + 블러 배경 + LRU 캐시
+// 원본(2천만 화소급)을 그대로 GPU에 올리면 수백 장에서 메모리가 부족해지므로
+// 출력 해상도 × 여유배율 크기로만 보관한다.
+
+import { mediaUrl } from '../platform.js';
+import { toneStats, makeCurves, applyCurves, decide, enhancePolicy } from './enhance.js';
+
+// 옛 사진 자동 보정 설정 (프로젝트 스타일) — 렌더러가 프로젝트를 받을 때 설정
+let enhanceStyle = 'old';
+export function setEnhanceStyle(mode) {
+  enhanceStyle = mode || 'old';
+}
+
+/** 사진 아이템 → 캐시 키 (회전 + 보정 정책 포함). tag를 주면 그 정책을 그대로 사용 */
+export function itemKey(it, tag) {
+  const r = ((Number(it?.rotate) || 0) % 360 + 360) % 360;
+  // tag는 문자열 또는 null만 인정 (Array.map 콜백으로 넘겨져 인덱스가 들어오는 실수 방지)
+  const e = typeof tag === 'string' || tag === null ? tag : enhancePolicy(it, enhanceStyle);
+  let k = it?.path;
+  if (r) k += `#r${r}`;
+  if (e) k += `#e${e}`;
+  return k;
+}
+
+function splitKey(key) {
+  const m = /^(.*?)(?:#r(90|180|270))?(?:#e([AB1]))?$/s.exec(key);
+  return { path: m[1], rot: Number(m[2] || 0), enh: m[3] || null };
+}
+
+/** 비트맵을 w×h 캔버스로 그리고, 정책에 따라 옛 사진 보정. 반환 { canvas, applied } */
+function enhanceTo(bmp, policy, w, h) {
+  const c = new OffscreenCanvas(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(bmp, 0, 0, w, h);
+  const id = g.getImageData(0, 0, w, h);
+  const st = toneStats(id.data, Math.max(1, Math.round((w * h) / 60000)));
+  const mode = decide(st, policy);
+  if (mode) {
+    applyCurves(id.data, makeCurves(st, mode));
+    g.putImageData(id, 0, 0);
+  }
+  return { canvas: c, applied: mode };
+}
+
+/** EXIF 방향이 반영된 비트맵을 추가로 회전 */
+export async function decodeRotated(key, maxWidth = 0) {
+  const { path, rot } = splitKey(key);
+  const res = await fetch(mediaUrl(path));
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  // maxWidth: 썸네일용 — 디코딩 단계에서 바로 줄여 메모리·시간 절약
+  const opts = { imageOrientation: 'from-image' };
+  if (maxWidth) Object.assign(opts, { resizeWidth: maxWidth, resizeQuality: 'medium' });
+  const full = await createImageBitmap(await res.blob(), opts);
+  if (!rot) return full;
+  const swap = rot === 90 || rot === 270;
+  const c = new OffscreenCanvas(swap ? full.height : full.width, swap ? full.width : full.height);
+  const g = c.getContext('2d');
+  g.translate(c.width / 2, c.height / 2);
+  g.rotate((rot * Math.PI) / 180);
+  g.drawImage(full, -full.width / 2, -full.height / 2);
+  full.close();
+  return createImageBitmap(c);
+}
+
+export class AssetManager {
+  constructor({ width, height, capacity = 14 }) {
+    this.W = width;
+    this.H = height;
+    this.capacity = capacity;
+    this.cache = new Map(); // key -> {promise, asset, used}
+    this.thumbCache = new Map();
+    this.thumbSize = Math.round(Math.max(360, width * 0.28));
+  }
+
+  _touch(entry) {
+    entry.used = performance.now();
+  }
+
+  get(path) {
+    const e = this.cache.get(path);
+    if (e && e.asset) {
+      this._touch(e);
+      return e.asset;
+    }
+    return null;
+  }
+
+  getThumb(path) {
+    const e = this.thumbCache.get(path);
+    return e && e.asset ? e.asset : null;
+  }
+
+  load(path) {
+    let e = this.cache.get(path);
+    if (!e) {
+      e = { promise: null, asset: null, used: performance.now() };
+      e.promise = this._decode(path)
+        .then((a) => (e.asset = a))
+        .catch((err) => {
+          console.warn('사진 로드 실패', path, err);
+          e.asset = { failed: true, w: 16, h: 9 };
+          return e.asset;
+        });
+      this.cache.set(path, e);
+      this._evict();
+    }
+    this._touch(e);
+    return e.promise;
+  }
+
+  loadThumb(path) {
+    let e = this.thumbCache.get(path);
+    if (e) {
+      // LRU: 최근 사용 순서 갱신
+      this.thumbCache.delete(path);
+      this.thumbCache.set(path, e);
+    }
+    if (!e) {
+      while (this.thumbCache.size >= 72) {
+        const [k, old] = this.thumbCache.entries().next().value;
+        old.asset?.img?.close?.();
+        this.thumbCache.delete(k);
+      }
+      e = { promise: null, asset: null };
+      e.promise = this._decodeThumb(path)
+        .then((a) => (e.asset = a))
+        .catch(() => (e.asset = { failed: true, w: 16, h: 9 }));
+      this.thumbCache.set(path, e);
+    }
+    return e.promise;
+  }
+
+  async ensure(paths, thumbs = []) {
+    await Promise.all([...paths.map((p) => this.load(p)), ...thumbs.map((p) => this.loadThumb(p))]);
+  }
+
+  isReady(paths, thumbs = []) {
+    return paths.every((p) => this.cache.get(p)?.asset) && thumbs.every((p) => this.thumbCache.get(p)?.asset);
+  }
+
+  _evict() {
+    if (this.cache.size <= this.capacity) return;
+    const entries = [...this.cache.entries()].filter(([, e]) => e.asset).sort((a, b) => a[1].used - b[1].used);
+    while (this.cache.size > this.capacity && entries.length) {
+      const [k, e] = entries.shift();
+      e.asset?.img?.close?.();
+      e.asset?.bg?.close?.();
+      this.cache.delete(k);
+    }
+  }
+
+  /** 가져올 때 읽어 둔 원본 크기(EXIF 방향 반영) — 디코딩 단계에서 바로 축소하는 데 사용 */
+  setHints(items) {
+    this.hints = new Map();
+    for (const it of items) {
+      if (it.type === 'photo' && it.w && it.h) this.hints.set(itemKey(it), { w: it.w, h: it.h, rot: ((Number(it.rotate) || 0) % 360 + 360) % 360 });
+    }
+  }
+
+  async _decode(key) {
+    const hint = this.hints?.get(key);
+    let pre = 0;
+    if (hint) {
+      const swap = hint.rot === 90 || hint.rot === 270;
+      const fw = swap ? hint.h : hint.w;
+      const fh = swap ? hint.w : hint.h;
+      const sc = Math.max(this.W / fw, this.H / fh) * 1.35;
+      // 원본이 충분히 클 때만 축소 디코딩 (가로 폭만 지정 → 실제 비율은 디코더가 유지)
+      if (sc < 0.9) pre = Math.max(64, Math.round(hint.w * sc));
+    }
+    const full = await decodeRotated(key, pre);
+    const iw = full.width;
+    const ih = full.height;
+    // 켄번스 줌(최대 ~1.3배)까지 고려한 최대 보관 크기
+    const cover = Math.max(this.W / iw, this.H / ih) * 1.35;
+    const scale = Math.min(1, cover);
+    const tw = Math.max(1, Math.round(iw * scale));
+    const th = Math.max(1, Math.round(ih * scale));
+    const { enh } = splitKey(key);
+    let src = full;
+    let img;
+    let applied = null;
+    if (enh) {
+      const r = enhanceTo(full, enh, tw, th);
+      applied = r.applied;
+      src = r.canvas;
+      img = await createImageBitmap(r.canvas);
+    } else img = scale < 1 ? await createImageBitmap(full, { resizeWidth: tw, resizeHeight: th, resizeQuality: 'high' }) : full;
+
+    // 블러 배경: 작은 캔버스에서 블러 → 크게 늘려 그려도 매끈함
+    const bw = 360;
+    const bh = Math.round((bw * this.H) / this.W);
+    const c = new OffscreenCanvas(bw, bh);
+    const g = c.getContext('2d');
+    const s = Math.max(bw / iw, bh / ih) * 1.15;
+    g.filter = 'blur(14px) saturate(1.15)';
+    g.drawImage(src, (bw - iw * s) / 2, (bh - ih * s) / 2, iw * s, ih * s);
+    g.filter = 'none';
+    const bg = await createImageBitmap(c);
+    if (img !== full) full.close();
+    return { img, bg, w: tw, h: th, srcW: iw, srcH: ih, enhanced: applied };
+  }
+
+  async _decodeThumb(key) {
+    const full = await decodeRotated(key);
+    const s = Math.min(1, this.thumbSize / Math.max(full.width, full.height));
+    const tw = Math.max(1, Math.round(full.width * s));
+    const th = Math.max(1, Math.round(full.height * s));
+    const { enh } = splitKey(key);
+    const img = enh ? await createImageBitmap(enhanceTo(full, enh, tw, th).canvas) : await createImageBitmap(full, { resizeWidth: tw, resizeHeight: th, resizeQuality: 'high' });
+    full.close();
+    return { img, w: tw, h: th };
+  }
+
+  dispose() {
+    for (const e of this.cache.values()) {
+      e.asset?.img?.close?.();
+      e.asset?.bg?.close?.();
+    }
+    for (const e of this.thumbCache.values()) e.asset?.img?.close?.();
+    this.cache.clear();
+    this.thumbCache.clear();
+  }
+}
+
+/** UI 필름스트립용 썸네일 (blob URL) — 동시 디코딩 수 제한 */
+const thumbQueue = [];
+let thumbActive = 0;
+const thumbUrlCache = new Map();
+
+export function uiThumb(path, size = 240, rotate = 0, needDims = true, enh = null) {
+  const ak = itemKey({ path, rotate }, enh);
+  const key = ak + '|' + size;
+  if (thumbUrlCache.has(key)) return thumbUrlCache.get(key);
+  const p = new Promise((resolve) => {
+    thumbQueue.push(async () => {
+      try {
+        const full = await decodeRotated(ak, needDims ? 0 : size * 2);
+        const s = Math.min(1, size / Math.min(full.width, full.height));
+        const w = Math.round(full.width * s);
+        const h = Math.round(full.height * s);
+        let c;
+        let applied = null;
+        if (enh) ({ canvas: c, applied } = enhanceTo(full, enh, w, h));
+        else {
+          c = new OffscreenCanvas(w, h);
+          c.getContext('2d').drawImage(full, 0, 0, w, h);
+        }
+        const info = { w: full.width, h: full.height };
+        full.close();
+        const out = await c.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
+        resolve({ url: URL.createObjectURL(out), applied, ...info });
+      } catch (e) {
+        resolve({ url: null, error: String(e), w: 0, h: 0 });
+      }
+    });
+    pump();
+  });
+  thumbUrlCache.set(key, p);
+  return p;
+}
+
+function pump() {
+  while (thumbActive < 3 && thumbQueue.length) {
+    const job = thumbQueue.pop(); // 최근 요청(지금 보이는 카드·선택한 사진) 우선
+    thumbActive++;
+    job().finally(() => {
+      thumbActive--;
+      pump();
+    });
+  }
+}
