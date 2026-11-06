@@ -227,11 +227,83 @@ export function introTiming(intro, dur) {
 
 // 몽타주(중간 연출) — 사진 여러 장을 한 화면에 모아 보여주는 장면
 export const MONTAGE_STYLES = {
-  grid: { name: '모자이크 그리드', size: [4, 6] },
-  polaroid: { name: '폴라로이드', size: [4, 5] },
-  split: { name: '분할 패널', size: [3, 3] },
-  filmstrip: { name: '필름 스트립', size: [5, 6] },
+  grid: { name: '모자이크 그리드', desc: '타일이 차례로 채워지는 사진 벽', size: [4, 6] },
+  polaroid: { name: '폴라로이드', desc: '인화 사진이 테이블 위로 떨어짐', size: [4, 5] },
+  split: { name: '분할 패널', desc: '세로 패널이 교차로 밀려 들어옴', size: [3, 3] },
+  filmstrip: { name: '필름 스트립', desc: '필름 띠가 가로로 흘러감', size: [5, 6] },
+  scrapbook: { name: '스크랩북', desc: '크라프트지 위 테이프로 붙인 사진 · 손글씨', size: [3, 5], isNew: true },
+  stack: { name: '카드 스택', desc: '쌓인 사진이 한 장씩 넘겨지며 다음 사진', size: [3, 5], isNew: true },
+  gallery: { name: '갤러리 월', desc: '액자가 걸린 전시장 벽 · 조명 · 카메라 이동', size: [4, 6], isNew: true },
+  diagonal: { name: '사선 분할', desc: '비스듬한 조각이 엇갈려 밀려 들어옴', size: [3, 4], isNew: true },
+  bento: { name: '벤토 콜라주', desc: '크고 작은 칸 · 한 장을 클로즈업했다 전체로', size: [4, 6], isNew: true },
+  timeline: { name: '연표 타임라인', desc: '연도 점이 찍힌 선을 따라 사진이 이어짐', size: [4, 6], isNew: true },
 };
+// 예전 프로젝트(연출 '심플')의 자동 몽타주 순환 — 바꾸면 기존 영상 구성이 달라지므로 고정
+export const MONTAGE_CLASSIC_ORDER = ['grid', 'polaroid', 'split', 'filmstrip'];
+
+/**
+ * 사진 장면 레이아웃 (사진 한 장이 화면에 어떻게 놓이는지)
+ * text: 글자(자막·라벨·폴더·연도)가 있어야 어울리는 레이아웃
+ */
+export const LAYOUTS = {
+  full: { name: '꽉 차게', desc: '화면 가득 · 천천히 움직임' },
+  framed: { name: '액자', desc: '매트 액자 속 사진 · 배경은 흐린 같은 사진' },
+  editorial: { name: '매거진', desc: '한쪽엔 사진, 한쪽엔 큰 연도·제목 타이포', text: true },
+  reveal: { name: '흑백→컬러', desc: '흑백으로 시작해 사선으로 색이 번짐' },
+  punch: { name: '임팩트 줌', desc: '확 다가오며 번쩍 · 짧게 흔들림' },
+  cinema: { name: '시네마', desc: '영화 화면비 · 아래쪽 자막 바(로어서드)' },
+  circle: { name: '원형 포커스', desc: '동그란 창 속 사진 · 빛나는 링' },
+};
+
+/**
+ * 연출 스타일: 사진 장면 레이아웃을 섞는 비율 + 자동 몽타주 효과 묶음 + 박자 강조
+ * layouts: 사진 장면마다 고를 확률 (나머지는 '꽉 차게')
+ */
+export const DIRECTIONS = {
+  simple: {
+    name: '심플',
+    desc: '사진 한 장씩 꽉 차게 · 차분한 슬라이드',
+    layouts: {},
+    montages: MONTAGE_CLASSIC_ORDER,
+    accent: 0,
+  },
+  classic: {
+    name: '클래식',
+    desc: '액자·흑백→컬러·연표로 품격 있는 변화',
+    layouts: { framed: 0.14, reveal: 0.1, cinema: 0.06 },
+    montages: ['grid', 'gallery', 'polaroid', 'timeline', 'bento', 'filmstrip'],
+    accent: 0,
+  },
+  dynamic: {
+    name: '다이내믹',
+    desc: '임팩트 줌·사선 분할·박자 펄스 — 행사·하이라이트',
+    layouts: { punch: 0.24, circle: 0.06, cinema: 0.05 },
+    montages: ['diagonal', 'stack', 'split', 'bento', 'grid', 'filmstrip'],
+    accent: 1,
+  },
+  cinematic: {
+    name: '시네마틱',
+    desc: '영화 화면비·로어서드 자막 — 다큐멘터리 느낌',
+    layouts: { cinema: 0.32, reveal: 0.1, punch: 0.05 },
+    montages: ['filmstrip', 'diagonal', 'gallery', 'timeline', 'split'],
+    accent: 0.35,
+  },
+  magazine: {
+    name: '매거진',
+    desc: '큰 타이포와 사진을 나란히 — 잡지 화보처럼',
+    layouts: { editorial: 0.36, framed: 0.1, circle: 0.07 },
+    montages: ['bento', 'grid', 'gallery', 'scrapbook', 'split'],
+    accent: 0,
+  },
+  emotional: {
+    name: '감성 앨범',
+    desc: '스크랩북·폴라로이드·원형 창 — 따뜻한 추억',
+    layouts: { framed: 0.14, reveal: 0.12, circle: 0.09 },
+    montages: ['scrapbook', 'polaroid', 'stack', 'gallery', 'filmstrip'],
+    accent: 0,
+  },
+};
+
 export const MONTAGE_FREQ = {
   off: { name: '끄기' },
   few: { name: '가끔', gap: [12, 16] },
@@ -337,6 +409,7 @@ export function defaultProject() {
       folderLabel: 'off',
       beatSync: true, // 음악 박자에 장면 전환 맞추기
       enhance: 'old', // 옛 사진 자동 보정: off | old(옛 사진만) | all
+      direction: 'classic', // 연출 스타일 (DIRECTIONS)
     },
     music: { tracks: [], volume: 0.9, fadeIn: 1.5, fadeOut: 5, crossfade: 3, loop: true },
     output: { aspect: '16:9', resolution: '1080p', fps: 30, quality: 'high', encoder: 'auto', path: '' },
@@ -349,6 +422,9 @@ export function normalizeProject(p) {
   const d = defaultProject();
   const out = { ...d, ...p };
   for (const k of ['text', 'intro', 'outro', 'style', 'music', 'output']) out[k] = { ...d[k], ...(p?.[k] || {}) };
+  // 연출 스타일이 없던 예전(1.7 이하) 프로젝트는 예전 모습 그대로 ('심플')
+  if (p?.style && !p.style.direction) out.style.direction = 'simple';
+  if (!DIRECTIONS[out.style.direction]) out.style.direction = 'classic';
   out.items = Array.isArray(p?.items) ? p.items : [];
   out.music.tracks = Array.isArray(out.music.tracks) ? out.music.tracks : [];
   return out;
@@ -372,7 +448,7 @@ export const TEMPLATES = {
     text: { number: '30', eyebrow: 'ANNIVERSARY', title: '함께 걸어온 30년', subtitle: `${Y - 30} — ${Y}`, startYear: Y - 30, endYear: Y, closingTitle: '감사합니다', closingMessage: '지난 30년, 함께해 주신 모든 분께\n진심으로 감사드립니다.', closingSub: '앞으로의 30년도 함께하겠습니다' },
     intro: { style: 'golden', duration: 10 },
     outro: { style: 'gallery' },
-    style: { theme: 'noir', typography: 'classic', transitionStyle: 'elegant', look: 'warm', motion: 'normal', grain: 0.22, vignette: 0.35 },
+    style: { direction: 'classic', theme: 'noir', typography: 'classic', transitionStyle: 'elegant', look: 'warm', motion: 'normal', grain: 0.22, vignette: 0.35 },
   },
   wedding: {
     name: '웨딩',
@@ -381,7 +457,7 @@ export const TEMPLATES = {
     text: { number: '', eyebrow: 'Our Wedding Day', title: '민준 그리고 서연', subtitle: today, closingTitle: '감사합니다', closingMessage: '저희 두 사람의 시작을\n축복해 주셔서 감사합니다.', closingSub: '예쁘게 잘 살겠습니다' },
     intro: { style: 'bloom', duration: 11 },
     outro: { style: 'gallery' },
-    style: { theme: 'rose', typography: 'romantic', transitionStyle: 'romantic', look: 'warm', motion: 'subtle', grain: 0.12, vignette: 0.25 },
+    style: { direction: 'emotional', theme: 'rose', typography: 'romantic', transitionStyle: 'romantic', look: 'warm', motion: 'subtle', grain: 0.12, vignette: 0.25 },
   },
   birthday: {
     name: '생일·돌잔치',
@@ -390,7 +466,7 @@ export const TEMPLATES = {
     text: { number: '1', eyebrow: 'HAPPY BIRTHDAY', title: '우리 아기 첫 번째 생일', subtitle: today, closingTitle: '사랑해', closingMessage: '건강하고 밝게 자라줘서 고마워.\n앞으로도 늘 함께할게.', closingSub: '생일 축하해!' },
     intro: { style: 'bloom', duration: 10 },
     outro: { style: 'gallery' },
-    style: { theme: 'sky', typography: 'playful', transitionStyle: 'fun', look: 'vivid', motion: 'normal', grain: 0.08, vignette: 0.2 },
+    style: { direction: 'emotional', theme: 'sky', typography: 'playful', transitionStyle: 'fun', look: 'vivid', motion: 'normal', grain: 0.08, vignette: 0.2 },
   },
   graduation: {
     name: '졸업·입학',
@@ -399,7 +475,7 @@ export const TEMPLATES = {
     text: { number: String(Y), eyebrow: 'GRADUATION', title: '빛나는 졸업을 축하합니다', subtitle: '○○고등학교 제00회 졸업식', closingTitle: '졸업을 축하합니다', closingMessage: '함께한 모든 순간이\n우리의 자랑입니다.', closingSub: '새로운 시작을 응원합니다' },
     intro: { style: 'cinematic', duration: 10 },
     outro: { style: 'credits' },
-    style: { theme: 'navy', typography: 'royal', transitionStyle: 'cinematic', look: 'natural', motion: 'normal', grain: 0.15, vignette: 0.35 },
+    style: { direction: 'cinematic', theme: 'navy', typography: 'royal', transitionStyle: 'cinematic', look: 'natural', motion: 'normal', grain: 0.15, vignette: 0.35 },
   },
   travel: {
     name: '여행 앨범',
@@ -408,7 +484,7 @@ export const TEMPLATES = {
     text: { number: '', eyebrow: 'Travel Diary', title: '제주, 우리의 여름', subtitle: '2026. 07. 21 — 07. 25', closingTitle: '또 떠나자', closingMessage: '함께라서 더 좋았던\n우리의 여행', closingSub: 'see you next trip' },
     intro: { style: 'polaroid', duration: 10 },
     outro: { style: 'gallery' },
-    style: { theme: 'sage', typography: 'diary', transitionStyle: 'dynamic', look: 'vivid', motion: 'strong', grain: 0.15, vignette: 0.3 },
+    style: { direction: 'magazine', theme: 'sage', typography: 'diary', transitionStyle: 'dynamic', look: 'vivid', motion: 'strong', grain: 0.15, vignette: 0.3 },
   },
   family: {
     name: '가족 앨범',
@@ -417,7 +493,7 @@ export const TEMPLATES = {
     text: { number: '70', eyebrow: 'HAPPY 70TH BIRTHDAY', title: '사랑하는 어머니의 칠순을 축하드립니다', subtitle: today, closingTitle: '사랑합니다', closingMessage: '언제나 저희 곁에 있어 주셔서\n감사합니다.', closingSub: '건강하게 오래오래 함께해요' },
     intro: { style: 'filmleader', duration: 11 },
     outro: { style: 'gallery' },
-    style: { theme: 'ivory', typography: 'warm', transitionStyle: 'retro', look: 'vintage', motion: 'subtle', grain: 0.3, vignette: 0.4 },
+    style: { direction: 'emotional', theme: 'ivory', typography: 'warm', transitionStyle: 'retro', look: 'vintage', motion: 'subtle', grain: 0.3, vignette: 0.4 },
   },
   memorial: {
     name: '추모·헌정',
@@ -426,7 +502,7 @@ export const TEMPLATES = {
     text: { number: '', eyebrow: 'IN LOVING MEMORY', title: '그리운 당신을 기억하며', subtitle: '1948 — 2026', closingTitle: '고맙습니다', closingMessage: '당신과 함께한 모든 날을\n오래도록 기억하겠습니다.', closingSub: '' },
     intro: { style: 'minimal', duration: 10 },
     outro: { style: 'simple' },
-    style: { theme: 'noir', typography: 'classic', transitionStyle: 'elegant', look: 'mono', motion: 'subtle', grain: 0.2, vignette: 0.45 },
+    style: { direction: 'classic', theme: 'noir', typography: 'classic', transitionStyle: 'elegant', look: 'mono', motion: 'subtle', grain: 0.2, vignette: 0.45 },
   },
   event: {
     name: '행사 하이라이트',
@@ -435,7 +511,7 @@ export const TEMPLATES = {
     text: { number: String(Y), eyebrow: 'EVENT HIGHLIGHTS', title: '함께해서 즐거웠던 하루', subtitle: '○○○ 워크숍', closingTitle: '수고하셨습니다', closingMessage: '함께해 주신 모든 분들께\n감사드립니다.', closingSub: '내년에 또 만나요', credits: '# 함께한 사람들\n기획\t홍길동\n진행\t김철수\n촬영\t이영희' },
     intro: { style: 'minimal', duration: 9 },
     outro: { style: 'credits' },
-    style: { theme: 'navy', typography: 'modern', transitionStyle: 'fun', look: 'vivid', motion: 'strong', grain: 0.08, vignette: 0.25 },
+    style: { direction: 'dynamic', theme: 'navy', typography: 'modern', transitionStyle: 'fun', look: 'vivid', motion: 'strong', grain: 0.08, vignette: 0.25 },
   },
   yearend: {
     name: '연말 결산',
@@ -444,7 +520,68 @@ export const TEMPLATES = {
     text: { number: String(Y), eyebrow: 'YEAR IN REVIEW', title: '올 한 해, 함께해서 고마웠습니다', subtitle: `${Y}. 01 — ${Y}. 12`, startYear: Y - 1, endYear: Y, closingTitle: '고맙습니다', closingMessage: '함께 만든 모든 순간이\n우리의 한 해였습니다.', closingSub: `Happy New Year ${Y + 1}` },
     intro: { style: 'mosaic', duration: 10 },
     outro: { style: 'gallery' },
-    style: { theme: 'burgundy', typography: 'classic', transitionStyle: 'cinematic', look: 'warm', motion: 'normal', grain: 0.2, vignette: 0.35 },
+    style: { direction: 'magazine', theme: 'burgundy', typography: 'classic', transitionStyle: 'cinematic', look: 'warm', motion: 'normal', grain: 0.2, vignette: 0.35 },
+  },
+  highlight: {
+    name: '다이내믹 하이라이트',
+    desc: '임팩트 줌·사선 분할·박자 펄스 · 행사 오프닝',
+    isNew: true,
+    name2: '하이라이트 영상',
+    text: { number: String(Y), eyebrow: 'HIGHLIGHTS', title: '우리가 만든 최고의 순간', subtitle: '○○○ 페스티벌', closingTitle: 'THANK YOU', closingMessage: '함께 뜨거웠던 시간,\n고맙습니다.', closingSub: 'See you next time' },
+    intro: { style: 'flashcut', duration: 8 },
+    outro: { style: 'simple' },
+    style: { direction: 'dynamic', theme: 'navy', typography: 'modern', transitionStyle: 'dynamic', look: 'vivid', motion: 'strong', grain: 0.06, vignette: 0.25, montage: 'many', photoDuration: 3.2, transitionDuration: 0.8 },
+  },
+  magazine: {
+    name: '매거진 스토리',
+    desc: '잡지 화보처럼 큰 타이포 + 사진 · 브랜드·인물',
+    isNew: true,
+    name2: '매거진 스토리',
+    text: { number: '', eyebrow: 'SPECIAL ISSUE', title: '우리의 이야기', subtitle: `Vol. ${Y}`, closingTitle: 'The End', closingMessage: '함께 써 내려간\n모든 페이지에 감사합니다.', closingSub: '' },
+    intro: { style: 'minimal', duration: 9 },
+    outro: { style: 'simple' },
+    style: { direction: 'magazine', theme: 'ivory', typography: 'classic', transitionStyle: 'elegant', look: 'natural', motion: 'subtle', grain: 0.06, vignette: 0.15 },
+  },
+  documentary: {
+    name: '시네마틱 다큐',
+    desc: '영화 화면비·로어서드 자막 · 공로·역사 기록',
+    isNew: true,
+    name2: '다큐멘터리 영상',
+    text: { number: '30', eyebrow: 'A DOCUMENTARY', title: '그 길 위의 사람들', subtitle: `${Y - 30} — ${Y}`, startYear: Y - 30, endYear: Y, closingTitle: '그리고, 계속', closingMessage: '기록은 여기까지지만\n이야기는 계속됩니다.', closingSub: '' },
+    intro: { style: 'cinematic', duration: 11 },
+    outro: { style: 'credits' },
+    style: { direction: 'cinematic', theme: 'noir', typography: 'royal', transitionStyle: 'cinematic', look: 'warm', motion: 'normal', grain: 0.24, vignette: 0.42 },
+  },
+  scrapbook: {
+    name: '추억 스크랩북',
+    desc: '테이프 붙인 사진·손글씨 · 우정·가족·커플',
+    isNew: true,
+    name2: '추억 스크랩북',
+    text: { number: '', eyebrow: 'our little memories', title: '우리의 소중한 날들', subtitle: today, closingTitle: '고마워', closingMessage: '함께라서 모든 날이\n특별했어.', closingSub: 'with love' },
+    intro: { style: 'polaroid', duration: 10 },
+    outro: { style: 'gallery' },
+    style: { direction: 'emotional', theme: 'ivory', typography: 'diary', transitionStyle: 'romantic', look: 'vintage', motion: 'subtle', grain: 0.26, vignette: 0.3, montage: 'many' },
+  },
+  history: {
+    name: '연혁 타임라인',
+    desc: '흑백→컬러·연표 몽타주 · 창립 기념 연혁 영상',
+    isNew: true,
+    name2: '연혁 영상',
+    text: { number: '30', eyebrow: 'OUR HISTORY', title: '30년의 발자취', subtitle: `${Y - 30} — ${Y}`, startYear: Y - 30, endYear: Y, closingTitle: '감사합니다', closingMessage: '지나온 30년의 걸음이\n다음 30년의 길이 됩니다.', closingSub: '' },
+    intro: { style: 'timeroll', duration: 10 },
+    outro: { style: 'gallery' },
+    style: { direction: 'classic', theme: 'navy', typography: 'classic', transitionStyle: 'elegant', look: 'warm', motion: 'normal', grain: 0.2, vignette: 0.35, folderLabel: 'change' },
+  },
+  shorts: {
+    name: '숏폼 하이라이트',
+    desc: '세로 9:16 · 빠른 컷 · 릴스·쇼츠·스토리',
+    isNew: true,
+    name2: '숏폼 영상',
+    text: { number: '', eyebrow: 'HIGHLIGHT', title: '오늘의 하이라이트', subtitle: today, closingTitle: '좋아요 · 구독', closingMessage: '', closingSub: '' },
+    intro: { style: 'flashcut', duration: 6 },
+    outro: { style: 'simple', duration: 4 },
+    style: { direction: 'dynamic', theme: 'noir', typography: 'modern', transitionStyle: 'dynamic', look: 'vivid', motion: 'strong', grain: 0.05, vignette: 0.2, montage: 'many', photoDuration: 2.2, transitionDuration: 0.6 },
+    output: { aspect: '9:16' },
   },
 };
 
@@ -452,13 +589,17 @@ export function applyTemplate(project, id) {
   const t = TEMPLATES[id];
   if (!t) return project;
   const d = defaultProject();
+  // 앞 템플릿만 바꿨던 설정(예: 숏폼의 세로 화면·짧은 사진 시간)은 기본값으로 되돌림
+  const prev = TEMPLATES[project.template];
+  const reset = (k, base) => Object.fromEntries(Object.keys(prev?.[k] || {}).filter((x) => !(x in (t[k] || {}))).map((x) => [x, base[x]]));
   return {
     ...project,
     name: project.items.length && project.name !== d.name && !Object.values(TEMPLATES).some((x) => x.name2 === project.name) ? project.name : t.name2,
     template: id,
     text: { ...d.text, credits: '', ...t.text, org: project.text.org, logo: project.text.logo },
-    intro: { ...project.intro, enabled: true, transition: 'auto', ...t.intro },
-    outro: { ...project.outro, enabled: true, ...t.outro },
-    style: { ...project.style, ...t.style },
+    intro: { ...project.intro, ...reset('intro', d.intro), enabled: true, transition: 'auto', ...t.intro },
+    outro: { ...project.outro, ...reset('outro', d.outro), enabled: true, ...t.outro },
+    style: { ...project.style, ...reset('style', d.style), ...t.style },
+    output: { ...project.output, ...reset('output', d.output), ...(t.output || {}) },
   };
 }

@@ -9,7 +9,7 @@ import { makeManualMontage, releaseMontages } from '../engine/edit.js';
 import { MagicModal } from './Magic.jsx';
 import { HelpModal } from './Help.jsx';
 import { AudioPreview } from '../engine/audio.js';
-import { newId, normalizeProject, defaultProject, applyTemplate, TEMPLATES, MONTAGE_STYLES } from '../engine/presets.js';
+import { newId, normalizeProject, defaultProject, applyTemplate, TEMPLATES, MONTAGE_STYLES, LAYOUTS } from '../engine/presets.js';
 import { fmtTime } from '../engine/math.js';
 import { importPaths, importWebFiles, mergeItems, defaultVideoName, estimateSizeMB, musicLength, sortPhotos } from './logic.js';
 import { api, isDesktop, baseName } from '../platform.js';
@@ -451,17 +451,17 @@ export default function App() {
 
   // ------------------------------------------------ 매직 버튼
   const magicRunning = useRef(false);
-  const runMagic = async ({ intro, music, source }) => {
+  const runMagic = async ({ intro, music, source, direction }) => {
     if (magicRunning.current) return;
     magicRunning.current = true;
     try {
-      await runMagicInner({ intro, music, source });
+      await runMagicInner({ intro, music, source, direction });
     } finally {
       magicRunning.current = false;
       setBusy(null);
     }
   };
-  const runMagicInner = async ({ intro, music, source }) => {
+  const runMagicInner = async ({ intro, music, source, direction }) => {
     setShowMagic(false);
     previewRef.current?.pause?.();
     let newItems = null;
@@ -514,7 +514,7 @@ export default function App() {
     }
     // 기다리는 동안 바뀐 내용이 있으면 최신 상태를 기준으로
     const items = (newItems || projectRef.current.items).map((i) => (qs.has(i.id) ? { ...i, q: qs.get(i.id) } : i));
-    const r = magicProject({ ...projectRef.current, items }, { intro, track, fresh });
+    const r = magicProject({ ...projectRef.current, items }, { intro, track, fresh, direction });
     const info = r.info;
     update(r.project);
     projectRef.current = r.project;
@@ -645,6 +645,10 @@ export default function App() {
       const set = new Set(ids);
       update((q) => ({ ...q, items: q.items.map((i) => (set.has(i.id) && i.type === 'photo' ? { ...i, skip: value ? true : undefined } : i)) }));
       toast(value ? `사진 ${ids.length}장을 영상에서 뺐습니다 (흐리게 남아 다시 넣을 수 있음)` : `사진 ${ids.length}장을 영상에 다시 넣었습니다`);
+    } else if (type === 'layout') {
+      const set = new Set(ids);
+      update((q) => ({ ...q, items: q.items.map((i) => (set.has(i.id) && i.type === 'photo' ? value === 'auto' ? { ...i, layout: undefined } : { ...i, layout: value, mg: undefined, mgStyle: undefined } : i)) }));
+      toast(value === 'auto' ? `사진 ${ids.length}장의 장면 레이아웃을 ‘자동’으로 되돌렸습니다` : `사진 ${ids.length}장을 ‘${LAYOUTS[value]?.name}’ 레이아웃으로 바꿨습니다`);
     } else if (type === 'delete') {
       actions.deleteSelected();
     }

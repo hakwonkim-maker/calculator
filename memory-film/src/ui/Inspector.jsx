@@ -4,7 +4,7 @@ import { Section, Field, TextInput, Slider, Segmented, Button, Icon, Toggle } fr
 import { Thumb } from './Filmstrip.jsx';
 import { TRANSITIONS } from '../engine/transitions.js';
 import { CHAPTER_DEFAULT_DURATION } from '../engine/timeline.js';
-import { MOTION_OPTIONS, MONTAGE_STYLES } from '../engine/presets.js';
+import { MOTION_OPTIONS, MONTAGE_STYLES, LAYOUTS } from '../engine/presets.js';
 import { enhancePolicy } from '../engine/enhance.js';
 import { photoMeta, updateItem, useMetaVersion } from './store.js';
 import { isLowRes, photoDims, checklist } from './logic.js';
@@ -255,6 +255,20 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
         </Field>
       </Section>
       <Section title="표시">
+        <Field label="장면 레이아웃">
+          <div className="chip-row tight">
+            <button className={'chip' + (!item.layout ? ' on' : '')} onClick={() => update((p) => updateItem(p, item.id, { layout: undefined }))} title="연출 스타일이 사진마다 골라 줍니다">
+              자동{!item.layout && grp?.type === 'photo' && grp.layout ? ` · ${LAYOUTS[grp.layout]?.name}` : ''}
+            </button>
+            {Object.entries(LAYOUTS).map(([id, l]) => (
+              <button key={id} className={'chip' + (item.layout === id ? ' on' : '')} title={l.desc} onClick={() => update((p) => updateItem(p, item.id, { layout: id, mg: undefined, mgStyle: undefined }))}>
+                {l.name}
+              </button>
+            ))}
+          </div>
+        </Field>
+        {item.layout && LAYOUTS[item.layout]?.text && !(item.caption || item.label) ? <p className="hint small">매거진 레이아웃은 자막·라벨·폴더 이름·촬영 연도를 크게 보여 줍니다. 자막을 넣으면 더 잡지처럼 보입니다.</p> : null}
+        {inGroup ? <p className="hint small">레이아웃을 직접 고르면 이 사진은 {inGroup.manual ? '직접 만든 ' : ''}몽타주에서 빠져 한 장으로 나옵니다.</p> : null}
         <Field label="화면 맞춤">
           <Segmented value={item.fit || 'auto'} onChange={set('fit')} options={[['auto', '자동'], ['cover', '꽉 채우기'], ['contain', '전체']]} size="sm" />
         </Field>

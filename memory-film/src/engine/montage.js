@@ -3,18 +3,36 @@
 //   polaroid  폴라로이드 — 인화 사진이 테이블 위로 한 장씩 떨어짐
 //   split     분할 패널 — 세로(세로 화면은 가로) 패널이 위아래에서 교차로 밀려 들어옴
 //   filmstrip 필름 스트립 — 필름 띠가 가로로 흘러가며 사진이 이어짐
+//   (스크랩북·카드 스택·갤러리 월·사선 분할·벤토·연표는 montage2.js)
 import { drawCover, drawThemeBackground, drawBokeh, rgba } from './draw.js';
 import { prog, clamp, lerp, easeOutCubic, easeInOutSine, rng, hashStr } from './math.js';
 import { itemKey } from './assets.js';
+import { drawScrapbook, drawStack, drawGalleryWall, drawDiagonal, drawBento, drawTimeline } from './montage2.js';
+
+// 크게 보이는 효과는 원본, 작게 보이는 효과는 썸네일
+const FULL = new Set(['grid', 'split', 'stack', 'gallery', 'diagonal', 'bento']);
 
 /** 몽타주에 필요한 에셋: 크게 보이는 스타일은 원본, 작게 보이는 스타일은 썸네일 */
 export function montageNeeds(seg) {
   const keys = seg.items.map((it) => itemKey(it));
-  return seg.style === 'grid' || seg.style === 'split' ? { full: keys, thumbs: [] } : { full: [], thumbs: keys };
+  const full = FULL.has(seg.style) || (seg.style === 'scrapbook' && keys.length <= 3);
+  return full ? { full: keys, thumbs: [] } : { full: [], thumbs: keys };
 }
 
 export function drawMontage(ctx, seg, tau, env) {
-  const fn = { grid: drawGrid, polaroid: drawPolaroids, split: drawSplit, filmstrip: drawFilmstrip }[seg.style] || drawGrid;
+  const fn =
+    {
+      grid: drawGrid,
+      polaroid: drawPolaroids,
+      split: drawSplit,
+      filmstrip: drawFilmstrip,
+      scrapbook: drawScrapbook,
+      stack: drawStack,
+      gallery: drawGalleryWall,
+      diagonal: drawDiagonal,
+      bento: drawBento,
+      timeline: drawTimeline,
+    }[seg.style] || drawGrid;
   fn(ctx, seg, tau, env);
 }
 

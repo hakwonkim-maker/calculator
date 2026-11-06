@@ -11,6 +11,8 @@ import { prog, clamp, lerp, easeOutCubic, easeInOutSine, easeOutQuart, easeInOut
 import { itemKey } from './assets.js';
 import { introTiming } from './presets.js';
 import { drawMontage } from './montage.js';
+import { drawFramed, drawCircle, drawEditorial, drawCinema, drawPunch, applyReveal } from './layouts.js';
+import { accentAt } from './timeline.js';
 
 export function drawSegment(ctx, seg, tau, env) {
   ctx.save();
@@ -25,12 +27,27 @@ export function drawSegment(ctx, seg, tau, env) {
       drawIntro(ctx, seg, tau, env);
       break;
     case 'photo':
-      drawPhoto(ctx, seg, tau, env);
+    case 'group': {
+      // 박자 강조: 센 박자에 맞춰 살짝 다가오는 펄스 + 옅은 섬광 (연출 스타일 '다이내믹' 등)
+      const acc = env.tl?.accents ? accentAt(env.tl, seg.start + tau) : 0;
+      if (acc > 0.001) {
+        const z = 1 + 0.028 * acc;
+        ctx.translate(env.W / 2, env.H / 2);
+        ctx.scale(z, z);
+        ctx.translate(-env.W / 2, -env.H / 2);
+      }
+      if (seg.type === 'photo') drawPhoto(ctx, seg, tau, env);
+      else {
+        drawMontage(ctx, seg, tau, env);
+        if (seg.folder) drawFolderTag(ctx, seg, tau, env);
+      }
+      if (acc > 0.001) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = `rgba(255,250,240,${(0.11 * acc).toFixed(3)})`;
+        ctx.fillRect(0, 0, env.W, env.H);
+      }
       break;
-    case 'group':
-      drawMontage(ctx, seg, tau, env);
-      if (seg.folder) drawFolderTag(ctx, seg, tau, env);
-      break;
+    }
     case 'chapter':
       drawChapter(ctx, seg, tau, env);
       break;
@@ -567,7 +584,7 @@ export function photoFitMode(item, asset, style, W, H) {
 }
 
 function drawPhoto(ctx, seg, tau, env) {
-  const { W, H, u, theme, project } = env;
+  const { W, H, u, theme } = env;
   const it = seg.item;
   const a = env.assets.get(itemKey(it));
   if (!a || a.failed) {
@@ -579,6 +596,28 @@ function drawPhoto(ctx, seg, tau, env) {
     }
     return;
   }
+  // 장면 레이아웃 (연출 스타일·사진별 선택) — 매거진·시네마는 글자를 직접 배치하므로 기본 자막·폴더 태그 생략
+  const lay = seg.layout || 'full';
+  const base = (c = ctx) => drawPhotoBase(c, seg, tau, env, a);
+  let ownText = false;
+  if (lay === 'framed') drawFramed(ctx, seg, tau, env, a);
+  else if (lay === 'circle') drawCircle(ctx, seg, tau, env, a);
+  else if (lay === 'editorial') ownText = drawEditorial(ctx, seg, tau, env, a);
+  else if (lay === 'cinema') ownText = drawCinema(ctx, seg, tau, env, a);
+  else if (lay === 'punch') drawPunch(ctx, seg, tau, env, base);
+  else base();
+  if (lay === 'reveal') applyReveal(ctx, seg, tau, env);
+  if (!ownText) {
+    if ((it.caption && it.caption.trim()) || (it.label && it.label.trim())) drawCaption(ctx, seg, tau, env);
+    if (seg.folder) drawFolderTag(ctx, seg, tau, env);
+  }
+  drawWatermark(ctx, env);
+}
+
+/** 기본 사진 장면: 화면 가득(켄번스) 또는 흐린 배경 위 원본 비율 */
+function drawPhotoBase(ctx, seg, tau, env, a) {
+  const { W, H, u, theme, project } = env;
+  const it = seg.item;
   const p = clamp(tau / seg.dur);
   const e = lerp(p, easeInOutSine(p), 0.4);
   const m = seg.motion || { type: 'zoomIn', amount: 1, fx: 0, fy: 0 };
@@ -670,10 +709,6 @@ function drawPhoto(ctx, seg, tau, env) {
       ctx.strokeRect(x, y, dw, dh);
     }
   }
-
-  if ((it.caption && it.caption.trim()) || (it.label && it.label.trim())) drawCaption(ctx, seg, tau, env);
-  if (seg.folder) drawFolderTag(ctx, seg, tau, env);
-  drawWatermark(ctx, env);
 }
 
 /** 폴더명 태그: 왼쪽 위 작은 금색 선 + 글자 (워터마크가 왼쪽 위면 오른쪽 위) */

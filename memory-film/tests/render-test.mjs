@@ -49,6 +49,14 @@ const scenarios = {
   restoreOff: { intro: { enabled: false }, outro: { enabled: false }, style: { theme: 'noir', typography: 'classic', enhance: 'off', motion: 'none', montage: 'off', look: 'natural', vignette: 0, grain: 0 } },
   restoreOn: { intro: { enabled: false }, outro: { enabled: false }, style: { theme: 'noir', typography: 'classic', enhance: 'old', motion: 'none', montage: 'off', look: 'natural', vignette: 0, grain: 0 } },
   manual: { intro: { enabled: false }, outro: { enabled: false }, style: { theme: 'noir', typography: 'classic', montage: 'off', motion: 'none' }, manual: [[0, 2, 'grid'], [2, 3, 'polaroid'], [5, 7, 'grid'], [12, 8, 'split'], [20, 2, 'polaroid'], [22, 3, 'grid'], [25, 8, 'polaroid'], [33, 6, 'split']] },
+  // v1.8 새 몽타주 6종 (2~8장) — 'groups' 시간 지정 시 각 몽타주 장면을 여러 시점에서 저장
+  montages2: { intro: { enabled: false }, outro: { enabled: false }, dates: true, style: { theme: 'noir', typography: 'classic', montage: 'off', motion: 'none' }, manual: [[0, 4, 'scrapbook'], [4, 4, 'stack'], [8, 5, 'gallery'], [13, 4, 'diagonal'], [17, 6, 'bento'], [23, 6, 'timeline'], [29, 2, 'scrapbook'], [31, 8, 'bento']] },
+  montages2b: { intro: { enabled: false }, outro: { enabled: false }, dates: true, style: { theme: 'ivory', typography: 'diary', montage: 'off', motion: 'none' }, manual: [[0, 8, 'scrapbook'], [8, 2, 'stack'], [10, 8, 'gallery'], [18, 8, 'diagonal'], [26, 2, 'bento'], [28, 3, 'timeline'], [31, 8, 'timeline']] },
+  montages2v: { intro: { enabled: false }, outro: { enabled: false }, dates: true, w: 1080, h: 1920, style: { theme: 'navy', typography: 'modern', montage: 'off', motion: 'none' }, manual: [[0, 5, 'scrapbook'], [5, 4, 'stack'], [9, 5, 'gallery'], [14, 4, 'diagonal'], [18, 6, 'bento'], [24, 6, 'timeline']] },
+  // v1.8 사진 장면 레이아웃 7종 (사진마다 지정) + 박자 강조
+  layouts: { intro: { enabled: false }, outro: { enabled: false }, dates: true, layouts: true, style: { theme: 'noir', typography: 'classic', montage: 'off', folderLabel: 'change' } },
+  layoutsIvory: { intro: { enabled: false }, outro: { enabled: false }, dates: true, layouts: true, style: { theme: 'ivory', typography: 'modern', montage: 'off' } },
+  layoutsV: { intro: { enabled: false }, outro: { enabled: false }, dates: true, layouts: true, w: 1080, h: 1920, style: { theme: 'navy', typography: 'royal', montage: 'off' } },
   square: { intro: { style: 'mosaic', duration: 10 }, style: { theme: 'navy', typography: 'modern' }, w: 1080, h: 1080 },
 };
 const sc = scenarios[scenario];
@@ -56,6 +64,12 @@ const sc = scenarios[scenario];
 if (sc.manual) {
   const ph = items.filter((i) => i.type === 'photo');
   sc.manual.forEach(([a, n, st], g) => ph.slice(a, a + n).forEach((it) => Object.assign(it, { mg: 'm' + g, mgStyle: st, caption: '', label: '' })));
+}
+if (sc.dates) items.filter((i) => i.type === 'photo').forEach((it, k) => Object.assign(it, { date: Date.UTC(1996 + Math.floor(k / 2) * 3, (k * 5) % 12, 1 + k), dateSource: 'exif' }));
+if (sc.layouts) {
+  const L = ['full', 'framed', 'editorial', 'reveal', 'punch', 'cinema', 'circle', 'editorial', 'cinema'];
+  const caps = ['창립 기념식 · 서울 본사', '', '첫 해외 진출을 축하하며 온 가족이 모였던 날, 모두가 웃었던 그 순간', '', '', '새 사옥 준공식', '', '', ''];
+  items.filter((i) => i.type === 'photo').forEach((it, k) => Object.assign(it, { layout: L[k % L.length], caption: caps[k % caps.length], label: k % 9 === 5 ? '2005' : '', folder: k < 9 ? '2005_사옥 이전' : '2019 체육대회' }));
 }
 const proj = { ...base, ...sc, text: { ...base.text, ...(sc.textx || {}) }, style: { ...sc.style } };
 
@@ -69,7 +83,9 @@ await page.goto('http://localhost:5199/harness.html');
 await page.waitForFunction(() => window.ready);
 const info = await page.evaluate(([p, w, h]) => window.setup(p, w, h), [proj, sc.w || 1920, sc.h || 1080]);
 console.log('total', info.total.toFixed(2), JSON.stringify(info.segs.map((s) => [s.type, +s.start.toFixed(2), s.trans])));
-const ts = times.length ? times : [0.6, 2, 3.5, 5, 7, 9.2, 10.5, 13, 14.6, 18, info.total - 6, info.total - 3, info.total - 1];
+const groupsMode = process.argv[3] === 'groups';
+const photosMode = process.argv[3] === 'photos';
+const ts = photosMode ? info.segs.filter((s) => s.type === 'photo').flatMap((s) => [0.12, 0.35, 0.6].map((f) => +(s.start + s.dur * f).toFixed(2))) : groupsMode ? info.segs.filter((s) => s.type === 'group').flatMap((s) => [0.25, 0.5, 0.75, 0.95].map((f) => +(s.start + s.dur * f).toFixed(2))) : times.length ? times : [0.6, 2, 3.5, 5, 7, 9.2, 10.5, 13, 14.6, 18, info.total - 6, info.total - 3, info.total - 1];
 for (const t of ts) {
   const t0 = Date.now();
   const url = await page.evaluate((t) => window.frame(t), t);

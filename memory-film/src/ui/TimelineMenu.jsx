@@ -1,6 +1,6 @@
 // 타임라인(필름스트립) 우클릭 메뉴: 몽타주 만들기·풀기, 사진 추가(앞/뒤 · 파일/폴더), 챕터, 영상에서 빼기, 삭제
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { MONTAGE_STYLES } from '../engine/presets.js';
+import { MONTAGE_STYLES, LAYOUTS } from '../engine/presets.js';
 import { checkMontageSelection } from '../engine/edit.js';
 import { isDesktop } from '../platform.js';
 
@@ -70,6 +70,18 @@ export function TimelineMenu({ x, y, project, tl, selected, onAction, onClose })
         ))}
       </Item>
       {inMontage && <Item label="몽타주 해제 (한 장씩 보이기)" onClick={() => act('release')} />}
+      {photos.length > 0 && (
+        <Item id="layout" label="장면 레이아웃">
+          <div className="tm-item" onClick={() => act('layout', { value: 'auto' })}>
+            <span>자동 (연출 스타일에 맡김)</span>
+          </div>
+          {Object.entries(LAYOUTS).map(([id, l]) => (
+            <div key={id} className="tm-item" onClick={() => act('layout', { value: id })} title={l.desc}>
+              <span>{l.name}</span>
+            </div>
+          ))}
+        </Item>
+      )}
       <div className="tm-sep" />
       <Item id="addBefore" label={first?.type === 'chapter' ? '이 챕터 앞에 사진 추가' : '이 사진 앞에 사진 추가'} disabled={!isDesktop} hint="PC 버전에서 사용할 수 있습니다">
         <div className="tm-item" onClick={() => act('add', { index: firstIdx, kind: 'files' })}>

@@ -2,7 +2,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Icon } from './controls.jsx';
 import { PreviewCard } from './panels.jsx';
-import { INTRO_STYLES } from '../engine/presets.js';
+import { INTRO_STYLES, DIRECTIONS } from '../engine/presets.js';
+import { magicDirection } from '../engine/magic.js';
 import { setPath } from './store.js';
 import { api, isDesktop, mediaUrl } from '../platform.js';
 import { fmtTime } from '../engine/math.js';
@@ -14,6 +15,7 @@ let previewAudio = null;
 
 export function MagicModal({ project, onClose, onRun }) {
   const [intro, setIntro] = useState(project.intro.style);
+  const [direction, setDirection] = useState(() => magicDirection(project));
   const [lib, setLib] = useState(null);
   const [mood, setMood] = useState(MOOD_FOR[project.template] || 'warm');
   const [music, setMusic] = useState(null); // { kind: 'lib', track } | { kind: 'none' } | { kind: 'keep' } | { kind: 'file' }
@@ -74,7 +76,7 @@ export function MagicModal({ project, onClose, onRun }) {
             <div className="modal-title">
               <Icon name="sparkle" size={20} /> 매직으로 영상 만들기
             </div>
-            <p className="hint">인트로와 음악만 고르면, 사진 정렬·좋은 사진 고르기·연도 챕터·몽타주·박자 맞춤·옛 사진 보정·길이까지 알아서 구성합니다.</p>
+            <p className="hint">인트로와 음악만 고르면, 사진 정렬·좋은 사진 고르기·연도 챕터·장면 레이아웃·몽타주·박자 맞춤·옛 사진 보정·길이까지 알아서 구성합니다.</p>
           </div>
           <Button icon="x" onClick={onClose} title="닫기" />
         </div>
@@ -89,6 +91,17 @@ export function MagicModal({ project, onClose, onRun }) {
                 <PreviewCard key={id} project={setPath(project, 'intro.style', id)} kind="intro" on={intro === id} title={s.name} badge={s.isNew ? 'NEW' : null} onClick={() => setIntro(id)} />
               ))}
             </div>
+            <div className="magic-dir">
+              <span className="magic-dir-label">연출</span>
+              <div className="chip-row tight">
+                {Object.entries(DIRECTIONS).map(([id, d]) => (
+                  <button key={id} className={'chip' + (direction === id ? ' on' : '')} title={d.desc} onClick={() => setDirection(id)}>
+                    {d.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="hint small">{DIRECTIONS[direction]?.desc}</p>
           </section>
 
           <section>
@@ -172,7 +185,7 @@ export function MagicModal({ project, onClose, onRun }) {
 
         <div className="modal-actions">
           <Button onClick={onClose}>취소</Button>
-          <Button icon="sparkle" variant="primary" disabled={!ready} onClick={() => onRun({ intro, music, source })}>
+          <Button icon="sparkle" variant="primary" disabled={!ready} onClick={() => onRun({ intro, music, source, direction })}>
             {source === 'folder' ? '폴더 고르고 영상 만들기' : '매직으로 영상 만들기'}
           </Button>
         </div>

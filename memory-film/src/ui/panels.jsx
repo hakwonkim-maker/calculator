@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Section, Field, TextInput, Slider, Segmented, Toggle, Button, Icon, keepSave } from './controls.jsx';
 import {
   THEMES, TYPOGRAPHY, LOOKS, TRANSITION_STYLES, RESOLUTIONS, QUALITY, INTRO_STYLES, OUTRO_STYLES, ASPECTS, TEMPLATES,
-  frameSize, outputSize, applyTemplate, introTiming, MONTAGE_FREQ,
+  frameSize, outputSize, applyTemplate, introTiming, MONTAGE_FREQ, MONTAGE_STYLES, DIRECTIONS, LAYOUTS,
 } from '../engine/presets.js';
 import { fitPhotoDurationToLength, minimumLength } from '../engine/timeline.js';
 import { planSelection } from '../engine/select.js';
@@ -51,7 +51,7 @@ export function TemplateGallery({ project, onApply, onClose }) {
         </div>
         <div className="tpl-grid">
           {Object.entries(TEMPLATES).map(([id, t]) => (
-            <PreviewCard key={id} project={applyTemplate(project, id)} kind="intro" on={project.template === id} title={t.name} desc={t.desc} onClick={() => onApply(id)} />
+            <PreviewCard key={id} project={applyTemplate(project, id)} kind="intro" on={project.template === id} title={t.name} desc={t.desc} badge={t.isNew ? 'NEW' : null} onClick={() => onApply(id)} />
           ))}
         </div>
       </div>
@@ -488,6 +488,29 @@ export function StylePanel({ project, update, actions }) {
   const set = (k, coalesce) => (v) => update((p) => setPath(p, 'style.' + k, v), coalesce ? 'style.' + k : null);
   return (
     <>
+      <Section title="연출 스타일" hint="사진 장면의 화면 구성(액자·매거진·흑백→컬러·임팩트 줌·시네마·원형)과 몽타주 효과를 어떤 비율로 섞을지 정합니다. 사진마다 직접 고를 수도 있습니다 (오른쪽 속성 창 · 타임라인 우클릭).">
+        <div className="style-cards compact">
+          {Object.entries(DIRECTIONS).map(([id, d]) => (
+            <button key={id} className={'style-card' + ((st.direction || 'classic') === id ? ' on' : '')} onClick={() => set('direction')(id)}>
+              <span>
+                <b>{d.name}</b>
+                <small>{d.desc}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="hint small">
+          {(() => {
+            const d = DIRECTIONS[st.direction || 'classic'] || DIRECTIONS.classic;
+            const lays = Object.keys(d.layouts).map((k) => LAYOUTS[k].name);
+            return `${lays.length ? '장면: 꽉 차게 + ' + lays.join('·') : '장면: 모두 꽉 차게'} / 몽타주: ${d.montages.map((m) => MONTAGE_STYLES[m].name).join('·')}`;
+          })()}
+        </p>
+        {DIRECTIONS[st.direction]?.accent > 0 && (
+          <Toggle checked={st.beatAccent !== false} onChange={set('beatAccent')} label="센 박자에 화면 펄스 (음악에 박자가 있을 때)" />
+        )}
+      </Section>
+
       <Section title="컬러 테마">
         <div className="theme-grid">
           {Object.entries(THEMES).map(([id, th]) => (
@@ -545,7 +568,7 @@ export function StylePanel({ project, update, actions }) {
         <p className="hint small">개별 전환은 아래 필름스트립의 ◆ 를 눌러 고르면 바로 미리보기로 재생됩니다.</p>
       </Section>
 
-      <Section title="몽타주 장면" hint="사진 사이사이에 폴라로이드·모자이크·분할 화면·필름 스트립 장면을 자동으로 섞어 지루하지 않게 합니다. 자막이나 개별 설정이 있는 사진은 항상 한 장씩 크게 나옵니다.">
+      <Section title="몽타주 장면" hint="사진 사이사이에 여러 장을 한 화면에 모은 장면(10가지 효과)을 자동으로 섞어 지루하지 않게 합니다. 어떤 효과가 나올지는 위 ‘연출 스타일’이 정하고, 타임라인에서 사진을 골라 우클릭하면 직접 만들 수도 있습니다. 자막이나 개별 설정이 있는 사진은 항상 한 장씩 크게 나옵니다.">
         <Segmented
           value={st.montage || 'normal'}
           onChange={set('montage')}

@@ -475,6 +475,8 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
 .magic-body section { display: flex; flex-direction: column; gap: 10px; }
 .magic-body h4 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 8px; }
 .magic-no { width: 22px; height: 22px; border-radius: 50%; background: var(--gold); color: #1d1606; display: grid; place-items: center; font-size: 12px; font-weight: 800; }
+.magic-dir { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.magic-dir-label { font-size: 12px; font-weight: 700; color: var(--dim); }
 .magic-intros { grid-template-columns: repeat(5, 1fr); }
 .magic-tracks { max-height: 190px; }
 .magic-tracks .lib-row { cursor: pointer; }

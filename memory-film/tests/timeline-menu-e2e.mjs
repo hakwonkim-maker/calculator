@@ -106,6 +106,17 @@ await rclick(4);
 await menuPick('앞에 챕터 카드 넣기');
 ok((await win.$$('.card-slot .card.chapter')).length === 1, '챕터 카드 추가');
 
+// 6-1) 장면 레이아웃 지정 (우클릭 ▸ 원형 포커스) → 속성 창 칩이 선택됨
+await win.click('.card-slot >> nth=1');
+await rclick(1);
+await menuPick('장면 레이아웃', '원형 포커스');
+ok(!!(await win.$('.inspector .chip.on:has-text("원형 포커스")')), '장면 레이아웃 지정 → 속성 창 반영');
+// 6-2) 연출 스타일 바꾸기 (스타일 단계)
+await win.click('.step:has-text("스타일")');
+await win.click('.style-card:has-text("다이내믹")');
+ok(!!(await win.$('.style-card.on:has-text("다이내믹")')), '연출 스타일 선택');
+await win.screenshot({ path: path.join(root, 'out', 'menu_direction.png') });
+
 // 7) 다른 이름으로 저장 → 이후 Ctrl+S는 새 파일에
 await win.click('.top-actions button[title^="다른 이름으로 저장"]');
 await win.waitForTimeout(800);

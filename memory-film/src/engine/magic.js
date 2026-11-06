@@ -3,7 +3,7 @@
 // - 기존 프로젝트: 사용자가 손본 것(순서·자막·★·뺀 사진·문구·몽타주 수정)은 유지하고 연출만 새로
 import { buildTimeline, folderOf } from './timeline.js';
 import { planSelection, photoScore } from './select.js';
-import { newId } from './presets.js';
+import { newId, DIRECTIONS, TEMPLATES } from './presets.js';
 
 const KNOWN = new Set(['exif', 'name', 'folder']);
 const yearOf = (it) => (it.date && KNOWN.has(it.dateSource) ? new Date(it.date).getFullYear() : null);
@@ -26,7 +26,15 @@ export function magicLength(nPhotos, musicLen) {
  * base: 현재 프로젝트 · opts: { intro, track(음악 트랙 객체 | null | 'keep'), fresh, seed }
  * 반환: { project, info: { target, used, total, chapters } }
  */
-export function magicProject(base, { intro, track, fresh, seed }) {
+/** 매직의 연출 스타일: 고른 값 > 지금 값(심플 제외) > 템플릿 > 클래식 */
+export function magicDirection(base, chosen) {
+  if (chosen && DIRECTIONS[chosen]) return chosen;
+  const cur = base.style?.direction;
+  if (cur && cur !== 'simple' && DIRECTIONS[cur]) return cur;
+  return TEMPLATES[base.template]?.style?.direction || 'classic';
+}
+
+export function magicProject(base, { intro, track, fresh, seed, direction }) {
   let items = base.items.slice();
   const photos0 = items.filter((i) => i.type === 'photo');
 
@@ -69,6 +77,7 @@ export function magicProject(base, { intro, track, fresh, seed }) {
   const style = {
     ...base.style,
     seed: seed ?? Math.floor(Math.random() * 1e6),
+    direction: magicDirection(base, direction),
     montage: base.style.montage === 'off' || base.style.montage === 'few' ? 'normal' : base.style.montage || 'normal',
     motion: base.style.motion === 'none' || base.style.motion === 'subtle' ? 'normal' : base.style.motion || 'normal',
     beatSync: true,
