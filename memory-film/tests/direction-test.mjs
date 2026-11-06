@@ -1,6 +1,7 @@
 // 연출 스타일·장면 레이아웃·새 몽타주·새 템플릿 단위 테스트: node tests/direction-test.mjs
 import assert from 'node:assert';
 import { buildTimeline, planMontage, accentAt, photoText, manualStyleFor } from '../src/engine/timeline.js';
+import { makeManualMontage } from '../src/engine/edit.js';
 import { defaultProject, normalizeProject, applyTemplate, TEMPLATES, DIRECTIONS, LAYOUTS, MONTAGE_STYLES, MONTAGE_CLASSIC_ORDER } from '../src/engine/presets.js';
 
 const mk = (n, extra = () => ({})) => Array.from({ length: n }, (_, i) => ({ id: 'p' + i, type: 'photo', path: '/r/a' + i + '.jpg', ...extra(i) }));
@@ -145,4 +146,47 @@ for (const [id, t] of Object.entries(TEMPLATES)) assert(DIRECTIONS[t.style.direc
   assert(!tl2.accents, '클래식은 박자 강조 없음');
   assert.equal(accentAt(tl2, 5), 0);
 }
+// 6) 기존 설정과의 연동
+{
+  // 폴더 이름: '폴더 이름 표시'를 껐으면 새 장면·몽타주에도 쓰지 않음, 카메라 기본 폴더 이름은 항상 제외
+  const it = { id: 'x', type: 'photo', path: 'D:/사진/2019_체육대회/a.jpg' };
+  assert.equal(photoText(it, { folderLabel: 'off' }).folder, '');
+  assert.equal(photoText(it, { folderLabel: 'change' }).folder, '2019 체육대회');
+  assert.equal(photoText(it, { folderLabel: 'change' }).big, '2019', '폴더 속 연도가 큰 글자');
+  for (const f of ['DCIM', '100CANON', 'Camera', 'KakaoTalk', '다운로드', '새 폴더', 'Screenshots']) assert.equal(photoText({ ...it, path: `D:/${f}/a.jpg` }, { folderLabel: 'all' }).folder, '', f);
+  // 매거진 레이아웃은 폴더 표시를 끈 프로젝트에서 폴더 이름만 있는 사진에 쓰이지 않음
+  const items = mk(120, () => ({ folder: '2010 체육대회' }));
+  const off = photoSegs(buildTimeline(proj('magazine', items, { montage: 'off', folderLabel: 'off' })));
+  assert(!off.some((s) => s.layout === 'editorial'), '폴더 끔 → 매거진 없음');
+  const on = photoSegs(buildTimeline(proj('magazine', items, { montage: 'off', folderLabel: 'change' })));
+  assert(on.some((s) => s.layout === 'editorial'), '폴더 켬 → 매거진 있음');
+  // 사진별 '화면 맞춤: 전체' → 잘리는 레이아웃 없음
+  for (const d of ['cinematic', 'magazine', 'emotional', 'dynamic']) {
+    const ps = photoSegs(buildTimeline(proj(d, mk(150, (i) => ({ fit: 'contain', caption: i % 2 ? '자막' : '' })), { montage: 'off' })));
+    assert(!ps.some((s) => ['cinema', 'circle', 'editorial'].includes(s.layout)), d + ': 전체 보기 사진이 잘림');
+  }
+  // 가로 화면의 세로 사진은 시네마 제외 (세로 화면은 반대)
+  const tall = photoSegs(buildTimeline(proj('cinematic', mk(150, () => ({ w: 3000, h: 4000 })), { montage: 'off' })));
+  assert(!tall.some((s) => s.layout === 'cinema'), '세로 사진 시네마 제외');
+  const tallV = photoSegs(buildTimeline({ ...proj('cinematic', mk(150, () => ({ w: 3000, h: 4000 })), { montage: 'off' }), output: { ...defaultProject().output, aspect: '9:16' } }));
+  assert(tallV.some((s) => s.layout === 'cinema'), '세로 화면에서는 세로 사진 시네마 허용');
+  // 카메라 움직임 '없음' → 임팩트 줌·박자 펄스 없음
+  const still = photoSegs(buildTimeline(proj('dynamic', mk(150), { montage: 'off', motion: 'none' })));
+  assert(!still.some((s) => s.layout === 'punch'), '움직임 없음 → 임팩트 줌 없음');
+  const one = photoSegs(buildTimeline(proj('dynamic', mk(150, () => ({ motion: 'none' })), { montage: 'off' })));
+  assert(!one.some((s) => s.layout === 'punch'), '사진별 고정 → 임팩트 줌 없음');
+  // 흑백 색감 → 흑백→컬러 없음
+  const mono = photoSegs(buildTimeline(proj('emotional', mk(150), { montage: 'off', look: 'mono' })));
+  assert(!mono.some((s) => s.layout === 'reveal'), '흑백 색감 → 흑백→컬러 없음');
+  // 직접 몽타주로 묶으면 사진별 레이아웃 지정이 정리됨
+  const lp = proj('classic', mk(8, (i) => (i < 3 ? { layout: 'circle' } : {})));
+  const r = makeManualMontage(lp, ['p0', 'p1', 'p2'], 'auto');
+  assert(r.project.items.slice(0, 3).every((i) => !i.layout && i.mg), '몽타주로 묶으면 레이아웃 정리');
+}
+{
+  const beats = Array.from({ length: 200 }, (_, i) => i * 0.5);
+  const music = { ...defaultProject().music, tracks: [{ path: 'a.mp3', duration: 100, beats, beatStrength: beats.map((_, i) => (i % 4 ? 0.3 : 1)), bpm: 120 }] };
+  assert(!buildTimeline({ ...proj('dynamic', mk(30), { motion: 'none' }), music }).accents, '움직임 없음 → 박자 펄스 없음');
+}
+console.log('✓ 기존 설정 연동 (폴더 표시·화면 맞춤·사진 방향·카메라 움직임·흑백·직접 몽타주)');
 console.log('direction-test: 모두 통과');

@@ -81,6 +81,20 @@ export function Inspector({ project, update, tl, selected, actions, onSelectIds 
             <Segmented value="" onChange={(v) => update((p) => ({ ...p, items: p.items.map((i) => (selected.has(i.id) ? { ...i, fit: v } : i)) }))} options={[['auto', '자동'], ['cover', '꽉'], ['contain', '전체']]} size="sm" />
           </Field>
           {sel.some((i) => i.type === 'photo') && (
+            <Field label="장면 레이아웃 일괄 변경">
+              <div className="chip-row tight">
+                <button className="chip" onClick={() => setAll({ layout: undefined })} title="연출 스타일이 사진마다 골라 줍니다">
+                  자동
+                </button>
+                {Object.entries(LAYOUTS).map(([id, l]) => (
+                  <button key={id} className="chip" title={l.desc} onClick={() => setAll({ layout: id, mg: undefined, mgStyle: undefined })}>
+                    {l.name}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+          {sel.some((i) => i.type === 'photo') && (
             <div className="btn-row">
               <Button size="sm" variant="soft" onClick={() => setAll({ star: true })} title="인트로·엔딩에 이 사진들을 먼저 사용">
                 ★ 대표 사진으로

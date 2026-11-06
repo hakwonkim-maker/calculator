@@ -29,11 +29,22 @@ const KNOWN_DATE = new Set(['exif', 'name', 'folder']);
 export function photoYear(it) {
   return it?.date && KNOWN_DATE.has(it.dateSource) ? new Date(it.date).getFullYear() : null;
 }
-/** 사진 장면에 쓸 글자: 라벨(큰 글자) · 자막 · 폴더 · 연도 · 날짜 */
-export function photoText(it) {
+// 화면에 보여 주기 어색한 폴더 이름 (카메라·휴대폰·다운로드 기본 폴더)
+const PLAIN_FOLDER = /^(dcim|\d{3}[a-z_]*|camera|cameraroll|camera roll|pictures?|photos?|images?|download(s)?|desktop|documents?|screenshots?|kakaotalk|사진|이미지|다운로드|바탕 ?화면|문서|스크린샷|카메라|카카오톡|새 폴더(\s*\(\d+\))?|new folder(\s*\(\d+\))?)$/i;
+/** 의미 있는 폴더 이름만 ('폴더 이름 표시'를 끈 프로젝트에서는 쓰지 않음) */
+export function folderText(it, style) {
+  if (!it || !style || (style.folderLabel || 'off') === 'off') return '';
+  const f = folderOf(it);
+  return f && !PLAIN_FOLDER.test(f.trim()) ? f : '';
+}
+/**
+ * 사진 장면에 쓸 글자: 라벨(큰 글자) · 자막 · 폴더 · 연도 · 날짜
+ * style: 프로젝트 스타일 — 폴더 이름은 '폴더 이름 표시'를 켰을 때만 씀
+ */
+export function photoText(it, style) {
   const label = String(it?.label || '').trim();
   const caption = String(it?.caption || '').trim();
-  const folder = it ? folderOf(it) : '';
+  const folder = folderText(it, style);
   const year = photoYear(it);
   let date = '';
   if (it?.date && (it.dateSource === 'exif' || it.dateSource === 'name')) {
@@ -53,7 +64,7 @@ export function photoText(it) {
  * - 짧게 지나가는 사진은 '꽉 차게'·'임팩트 줌'만, 글자가 없는 사진은 매거진 레이아웃 제외
  * - 다이내믹: 챕터 카드 바로 뒤 첫 사진은 임팩트 줌
  */
-export function assignLayouts(raw, style, T = 0) {
+export function assignLayouts(raw, style, T = 0, portraitFrame = false) {
   const dir = DIRECTIONS[style.direction] || DIRECTIONS.simple;
   const seed = style.seed || 1;
   let prev = 'full';
@@ -72,7 +83,7 @@ export function assignLayouts(raw, style, T = 0) {
     else {
       const visible = s.dur - T;
       const short = visible < 1.6;
-      const txt = photoText(it).any;
+      const txt = photoText(it, style).any;
       const r = rng(hashStr(`${seed}|lay|${s.key}`));
       const roll = r();
       if (dir.layouts.punch && prevType === 'chapter') lay = 'punch';
@@ -90,6 +101,16 @@ export function assignLayouts(raw, style, T = 0) {
       if (short && lay !== 'punch') lay = 'full';
       // 인트로 바로 뒤는 인트로 전환(1.8초 이상)에 가려 임팩트가 보이지 않으므로 제외
       if (lay === 'punch' && prevType === 'intro') lay = 'full';
+      // 기존 설정과 어긋나지 않게
+      // · 사진별 '화면 맞춤: 전체'를 고른 사진은 잘리는 레이아웃(시네마·원형·매거진) 대신 액자
+      if (it.fit === 'contain' && (lay === 'cinema' || lay === 'circle' || lay === 'editorial')) lay = 'framed';
+      // · 화면과 방향이 반대인 사진(가로 화면의 세로 사진 등)은 영화 화면비로 자르면 너무 많이 잘림
+      const ar = it.w && it.h ? ((((Number(it.rotate) || 0) % 180) + 180) % 180 === 90 ? it.h / it.w : it.w / it.h) : 0;
+      if (lay === 'cinema' && ar && (portraitFrame ? ar > 1.15 : ar < 0.85)) lay = 'framed';
+      // · 카메라 움직임 '없음'(전체·사진별)이면 확 다가오는 임팩트 줌 제외
+      if (lay === 'punch' && (style.motion === 'none' || it.motion === 'none')) lay = 'full';
+      // · 색감이 흑백이면 흑백→컬러 변화가 보이지 않으므로 액자
+      if (lay === 'reveal' && style.look === 'mono') lay = 'framed';
       const loose = style.direction === 'magazine';
       if (lay !== 'full' && prev !== 'full' && prev !== 'group' && (!loose || prev === lay)) lay = 'full';
     }
@@ -299,7 +320,8 @@ export function buildTimeline(project) {
  */
 function withAccents(tl, project) {
   const amt = (DIRECTIONS[project.style.direction] || DIRECTIONS.simple).accent || 0;
-  if (!amt || project.style.beatAccent === false) return tl;
+  // 카메라 움직임 '없음'이면 박자 펄스도 넣지 않음
+  if (!amt || project.style.beatAccent === false || project.style.motion === 'none') return tl;
   const beats = beatsOnTimeline(project.music, tl.total);
   if (beats.length < 8) return tl;
   const strong = beats.map((b) => b.s).sort((a, b) => b - a)[Math.floor(beats.length * 0.3)] ?? 0.6;
@@ -400,7 +422,8 @@ function buildCore(project, photoDuration, T) {
   }
 
   // 사진 장면 레이아웃 (임팩트 줌은 컷 전환과 짝을 이뤄야 하므로 전환 결정 전에)
-  assignLayouts(raw, st, T);
+  const portraitFrame = ['9:16', '4:5'].includes(project.output?.aspect);
+  assignLayouts(raw, st, T, portraitFrame);
 
   // 경계(전환) 결정
   let prevTrans = null;

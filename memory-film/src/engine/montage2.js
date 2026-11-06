@@ -46,10 +46,10 @@ function appearAt(seg, i, n, spread = 0.6) {
 }
 
 /** 카드에 쓸 짧은 글자: 라벨 > 날짜 > 폴더 > 연도 (앞 카드와 같으면 생략) */
-function cardLabels(items) {
+function cardLabels(items, style) {
   let prev = null;
   return items.map((it) => {
-    const t = photoText(it);
+    const t = photoText(it, style);
     const s = t.label || t.date || t.folder || (t.year ? String(t.year) : '');
     const out = s && s !== prev ? s : '';
     prev = s;
@@ -113,8 +113,17 @@ function kraftPaper(env) {
 
 /** 장수에 맞춰 화면을 칸으로 나눈 자리 (마지막 줄은 가운데 정렬) + 약간의 흐트러짐 */
 function looseSlots(n, W, H, m, r) {
-  const land = W >= H;
-  const cols = land ? [1, 1, 2, 3, 2, 3, 3, 4, 4][n] : [1, 1, 1, 1, 2, 2, 2, 2, 2][n];
+  // 화면 비율(가로·세로·정사각형)에 맞춰 사진이 가장 크게 보이는 칸 수를 고름 (인화지 ≈ 4:3 + 아래 여백)
+  let cols = 1;
+  let best = 0;
+  for (let c = 1; c <= n; c++) {
+    const rws = Math.ceil(n / c);
+    const size = Math.min((W - 2 * m) / c / 1.45, (H - 2 * m) / rws / 1.2);
+    if (size > best * 1.04) {
+      best = size;
+      cols = c;
+    }
+  }
   const rows = Math.ceil(n / cols);
   const cw = (W - 2 * m) / cols;
   const ch = (H - 2 * m) / rows;
@@ -218,7 +227,7 @@ export function drawScrapbook(ctx, seg, tau, env) {
   ctx.drawImage(kraftPaper(env), -W * 0.03, -H * 0.03, W * 1.06, H * 1.06);
   const r = rng(hashStr('scrap' + seg.key));
   const slots = looseSlots(n, W, H, 46 * u, r);
-  const labels = cardLabels(seg.items);
+  const labels = cardLabels(seg.items, env.project.style);
   const full = n <= 3;
   const ink = 'rgba(62,38,20,0.88)';
   slots.forEach((sl, i) => {
@@ -445,7 +454,7 @@ export function drawGalleryWall(ctx, seg, tau, env) {
   if (total + pad * 2 > W) camX = lerp(-pad, total + pad - W, easeInOutSine(p));
   else camX = (total - W) / 2;
   const zoom = lerp(1.03, 1.0, easeOutCubic(p));
-  const labels = cardLabels(seg.items);
+  const labels = cardLabels(seg.items, env.project.style);
   ctx.save();
   ctx.translate(W / 2, H / 2);
   ctx.scale(zoom, zoom);
@@ -715,7 +724,7 @@ export function drawBento(ctx, seg, tau, env) {
     ctx.restore();
   });
   // 주인공 칸 위 글자 칩 (연도·폴더 등)
-  const t = photoText(seg.items[0]);
+  const t = photoText(seg.items[0], env.project.style);
   const chip = t.big || t.folder;
   const ca = prog(tau, t0 + 1.2, t0 + 1.8) * (1 - prog(tau, seg.dur - seg.tOut * 0.6 - 0.4, seg.dur - seg.tOut * 0.6));
   if (chip && ca > 0) {
@@ -742,8 +751,8 @@ export function drawBento(ctx, seg, tau, env) {
 // 연표 타임라인
 // =====================================================================
 /** 카드 아래 연표 글자: 여러 해에 걸쳐 있으면 연도, 한 해 안이면 월·일, 없으면 폴더 이름 */
-function timelineLabels(items) {
-  const ts = items.map((it) => photoText(it));
+function timelineLabels(items, style) {
+  const ts = items.map((it) => photoText(it, style));
   const years = new Set(ts.map((t) => t.year).filter(Boolean));
   return ts.map((t) => {
     if (t.label) return { big: t.label, small: t.folder && t.folder !== t.label ? t.folder : '' };
@@ -778,7 +787,7 @@ export function drawTimeline(ctx, seg, tau, env) {
   const tip = lerp(dots[0] - spacing * 0.5, dots[n - 1] + spacing * 0.35, easeInOutSine(prog(tau, t0, t1)));
   const fits = span + cardA * 1.4 < AL;
   const cam = fits ? (dots[0] + dots[n - 1]) / 2 - AL / 2 : clamp(tip - AL * 0.62, dots[0] - AL * 0.25, dots[n - 1] + AL * 0.25 - AL * 0.95);
-  const labels = timelineLabels(seg.items);
+  const labels = timelineLabels(seg.items, env.project.style);
   const accent = theme.accentSolid;
   // 배경 큰 연도 (지금 지나는 점의 글자)
   const curIdx = Math.max(0, Math.min(n - 1, Math.floor((tip - dots[0]) / spacing + 0.5)));

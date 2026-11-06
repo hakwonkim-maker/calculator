@@ -15,7 +15,7 @@ export async function ensureFonts(project) {
     ...project.items.flatMap((i) => [i.caption, i.label, i.title, i.subtitle]),
     // 폴더 이름·날짜 (폴더 태그·매거진·시네마·연표·스크랩북 손글씨에 쓰임)
     ...project.items.filter((i) => i.type === 'photo').flatMap((i) => {
-      const t = photoText(i);
+      const t = photoText(i, project.style);
       return [t.folder, t.date, t.folder.toUpperCase()];
     }),
   ]

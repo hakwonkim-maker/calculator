@@ -433,6 +433,10 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
 .card-star { position: absolute; right: 7px; bottom: 5px; font-size: 13px; color: var(--gold); text-shadow: 0 0 5px #000; }
 .card-flag + .card-star { right: 22px; }
 .filmstrip.compact .card-montage { font-size: 8px; padding: 1px 4px; }
+.card-layout { position: absolute; left: 6px; bottom: 6px; font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 5px; background: #0009; color: #e8dcc0; border: 1px solid #e8dcc055; max-width: calc(100% - 40px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-layout.own { background: var(--gold); color: #1d1606; border-color: transparent; }
+.card:has(.card-cap) .card-layout { bottom: 26px; }
+.filmstrip.compact .card-layout { font-size: 8px; padding: 1px 4px; }
 .filmstrip.compact .montage-link { width: 8px; }
 .insp-flags { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .confirm-modal { width: 500px; }

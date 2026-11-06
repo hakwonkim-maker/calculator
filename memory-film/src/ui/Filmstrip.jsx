@@ -5,7 +5,7 @@ import { TRANSITIONS } from '../engine/transitions.js';
 import { setPhotoMeta, usePhotoMeta } from './store.js';
 import { isLowRes, photoDims } from './logic.js';
 import { Icon } from './controls.jsx';
-import { MONTAGE_STYLES } from '../engine/presets.js';
+import { MONTAGE_STYLES, LAYOUTS } from '../engine/presets.js';
 import { enhancePolicy } from '../engine/enhance.js';
 import { TimelineMenu } from './TimelineMenu.jsx';
 
@@ -53,7 +53,7 @@ export function Thumb({ path, className, rotate = 0, lazy = false, needDims = tr
   return src ? <img className={className} src={src} alt="" draggable={false} /> : <div ref={boxRef} className={className + ' thumb-loading'} />;
 }
 
-const Card = memo(function Card({ item, index, selected, active, onSelect, onDragStart, montage, enh }) {
+const Card = memo(function Card({ item, index, selected, active, onSelect, onDragStart, montage, layout, enh }) {
   const meta = usePhotoMeta(item.type === 'photo' ? item.path : null);
   const [restored, setRestored] = useState(false);
   const low = item.type === 'photo' && isLowRes(item);
@@ -89,6 +89,11 @@ const Card = memo(function Card({ item, index, selected, active, onSelect, onDra
       {restored && enh && !item.skip && <span className="card-restored" title="옛 사진 자동 보정 적용됨 (색 바램·대비 복원)">보정</span>}
       {item.star && <span className="card-star" title="대표 사진 (인트로·엔딩에 먼저 사용)">★</span>}
       {montage && <span className="card-montage" title={`몽타주 장면(${montage})에 함께 나옵니다`}>{montage}</span>}
+      {!montage && layout && layout !== 'full' && LAYOUTS[layout] && (
+        <span className={'card-layout' + (item.layout ? ' own' : '')} title={item.layout ? `직접 고른 장면 레이아웃: ${LAYOUTS[layout].name}` : `연출 스타일이 고른 장면 레이아웃: ${LAYOUTS[layout].name} (속성 창에서 바꾸기)`}>
+          {LAYOUTS[layout].name}
+        </span>
+      )}
       {(item.label || item.caption) && <span className="card-cap">{[item.label, item.caption].filter(Boolean).join(' · ')}</span>}
     </div>
   );
@@ -269,7 +274,7 @@ export function Filmstrip({ compact, project, tl, selected, activeKey, onSelect,
           <React.Fragment key={it.id}>
             {dropIdx === i && <div className="drop-marker" />}
             <div data-idx={i} className={'card-slot' + (dragId === it.id ? ' dragging' : '')} onContextMenu={(e) => openCtx(e, it.id)}>
-              <Card item={it} index={it.type === 'photo' ? photoNo : '§'} selected={selected.has(it.id)} active={activeKey === it.id || (grp && activeKey === grp.key)} onSelect={select} onDragStart={onDragStart} montage={grp ? MONTAGE_STYLES[grp.style]?.name : null} enh={it.type === 'photo' ? enhancePolicy(it, project.style.enhance) : null} />
+              <Card item={it} index={it.type === 'photo' ? photoNo : '§'} selected={selected.has(it.id)} active={activeKey === it.id || (grp && activeKey === grp.key)} onSelect={select} onDragStart={onDragStart} montage={grp ? MONTAGE_STYLES[grp.style]?.name : null} layout={mySeg?.type === 'photo' ? mySeg.layout : null} enh={it.type === 'photo' ? enhancePolicy(it, project.style.enhance) : null} />
             </div>
             {sameGroup && <div className="montage-link" title="몽타주로 한 화면에 함께 나오는 사진" />}
             {nextSeg && (

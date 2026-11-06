@@ -52,7 +52,8 @@ export function makeManualMontage(project, ids, style = 'auto') {
   const items = project.items.map((it) => {
     if (!assign.has(it.id)) return it;
     // 자동 몽타주 지정(montage)은 이 사진들엔 더 이상 의미가 없으므로 정리
-    const { montage, ...rest } = it;
+    // 사진별 장면 레이아웃도 몽타주 안에서는 쓰이지 않으므로 정리 (풀면 연출 스타일이 다시 고름)
+    const { montage, layout, ...rest } = it;
     return { ...rest, mg: assign.get(it.id), mgStyle: style === 'auto' ? undefined : style };
   });
   return {

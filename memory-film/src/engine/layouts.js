@@ -271,7 +271,7 @@ export function drawCinema(ctx, seg, tau, env, a) {
   const bh = lerp(H * 0.86, bandH, open);
   const y0 = (H - bh) / 2;
   kenBurnsIn(ctx, a, seg, tau, 0, y0, W, bh, 1);
-  const t = photoText(seg.item);
+  const t = photoText(seg.item, env.project.style);
   const title = t.label || t.caption;
   const sub = t.label ? t.caption : '';
   const eyebrow = t.folder && t.folder !== title ? t.folder : '';
@@ -370,7 +370,7 @@ function wrapLines(ctx, text, maxW, maxLines) {
 export function drawEditorial(ctx, seg, tau, env, a) {
   const { W, H, u, theme, typo } = env;
   const land = W >= H;
-  const t = photoText(seg.item);
+  const t = photoText(seg.item, env.project.style);
   const big = t.big || '';
   const caption = t.caption || (t.label && big !== t.label ? t.label : '');
   const eyebrow = (t.folder && t.folder !== big ? t.folder : '') || t.date || '';

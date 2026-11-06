@@ -57,6 +57,8 @@ const scenarios = {
   layouts: { intro: { enabled: false }, outro: { enabled: false }, dates: true, layouts: true, style: { theme: 'noir', typography: 'classic', montage: 'off', folderLabel: 'change' } },
   layoutsIvory: { intro: { enabled: false }, outro: { enabled: false }, dates: true, layouts: true, style: { theme: 'ivory', typography: 'modern', montage: 'off' } },
   layoutsV: { intro: { enabled: false }, outro: { enabled: false }, dates: true, layouts: true, w: 1080, h: 1920, style: { theme: 'navy', typography: 'royal', montage: 'off' } },
+  montages2sq: { intro: { enabled: false }, outro: { enabled: false }, dates: true, w: 1080, h: 1080, style: { theme: 'noir', typography: 'classic', montage: 'off', motion: 'none' }, manual: [[0, 5, 'scrapbook'], [5, 4, 'stack'], [9, 5, 'gallery'], [14, 4, 'diagonal'], [18, 6, 'bento'], [24, 6, 'timeline']] },
+  layouts45: { intro: { enabled: false }, outro: { enabled: false }, dates: true, layouts: true, w: 1080, h: 1350, style: { theme: 'noir', typography: 'classic', montage: 'off', folderLabel: 'change' } },
   square: { intro: { style: 'mosaic', duration: 10 }, style: { theme: 'navy', typography: 'modern' }, w: 1080, h: 1080 },
 };
 const sc = scenarios[scenario];
