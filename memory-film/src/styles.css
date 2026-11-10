@@ -527,3 +527,79 @@ kbd { font-family: inherit; font-size: 10.5px; background: var(--panel2); border
 .tm-sub.flip { left: auto; right: calc(100% + 4px); }
 .tm-sep { height: 1px; background: var(--line); margin: 4px 6px; }
 .tm-foot { padding: 6px 10px 3px; font-size: 10.5px; color: var(--dim); }
+
+/* ------------------------------------------------ 음악 편집 창 */
+.app.music-open { grid-template-rows: 54px minmax(0, 1fr) minmax(330px, 47vh); grid-template-areas: 'top top top top' 'nav panel center insp' 'nav mus mus mus'; }
+.music-editor { grid-area: mus; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-top: 1px solid var(--line); background: var(--bg2); }
+.me-toolbar { display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.me-toolbar .tbtn.play { width: 30px; height: 30px; }
+.me-title { display: flex; align-items: center; gap: 6px; font-size: 13.5px; margin-right: 4px; }
+.me-mode { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: #ffffff14; color: var(--muted); }
+.me-mode.edit { background: var(--gold); color: #1d1606; }
+.me-time { font-variant-numeric: tabular-nums; font-size: 13px; min-width: 54px; color: var(--text); }
+.me-sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+.me-grow { flex: 1; }
+.me-xf, .me-chk { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+.me-xf select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }
+.me-body { flex: 1; display: flex; min-height: 0; }
+.me-sources { width: 190px; flex: none; border-right: 1px solid var(--line); padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.me-src-head { font-size: 11.5px; font-weight: 700; color: var(--dim); }
+.me-src { display: flex; align-items: center; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); cursor: grab; }
+.me-src span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.me-src b { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.me-src small { font-size: 10.5px; color: var(--dim); }
+.me-src .chip { padding: 2px 8px; font-size: 11px; }
+.me-main { flex: 1; display: flex; min-width: 0; overflow-y: auto; }
+.me-heads { width: 104px; flex: none; border-right: 1px solid var(--line); }
+.me-head-ruler { height: 22px; font-size: 10.5px; color: var(--dim); padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.me-head-scenes { height: 30px; font-size: 10.5px; color: var(--dim); padding: 8px; border-bottom: 1px solid var(--line); }
+.me-head-lane { display: flex; align-items: center; gap: 2px; padding: 0 4px 0 8px; font-size: 11.5px; border-bottom: 1px solid #ffffff0d; border-left: 3px solid var(--lc); }
+.me-head-lane span { flex: 1; }
+.me-head-lane .icon-btn.on { color: #e58a7a; }
+.me-add-layer { margin: 6px 8px; font-size: 11px; color: var(--muted); background: none; border: 1px dashed var(--line2); border-radius: 6px; padding: 4px 6px; width: calc(100% - 16px); }
+.me-scroll { flex: 1; overflow-x: auto; overflow-y: hidden; position: relative; min-width: 0; }
+.me-canvas { position: relative; min-height: 100%; }
+.me-ruler { position: relative; height: 22px; border-bottom: 1px solid var(--line); cursor: text; background: #00000022; }
+.me-tick { position: absolute; top: 0; height: 22px; border-left: 1px solid #ffffff33; padding: 4px 4px; font-size: 10px; color: var(--dim); font-variant-numeric: tabular-nums; pointer-events: none; }
+.me-scenes { position: relative; height: 30px; border-bottom: 1px solid var(--line); cursor: text; }
+.me-scene { position: absolute; top: 5px; height: 20px; border-radius: 4px; background: #5b564e; border-right: 1px solid #00000066; font-size: 10px; color: #fff; padding: 3px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; pointer-events: none; }
+.me-scene.photo:nth-child(even) { background: #4c4841; }
+.me-scene.intro, .me-scene.outro { background: #a8873f; color: #1d1606; font-weight: 700; }
+.me-scene.chapter { background: #5d7799; font-weight: 700; }
+.me-scene.group { background: #6c8aa3; }
+.me-lanes { position: relative; cursor: text; }
+.me-lane { position: absolute; left: 0; right: 0; border-bottom: 1px solid #ffffff0d; }
+.me-lane:nth-child(even) { background: #ffffff05; }
+.me-lane.muted { background: repeating-linear-gradient(135deg, #ffffff06 0 8px, transparent 8px 16px); }
+.me-gap { position: absolute; top: 0; background: repeating-linear-gradient(90deg, #e58a7a14 0 6px, transparent 6px 12px); border-left: 1px dashed #e58a7a66; border-right: 1px dashed #e58a7a66; pointer-events: none; }
+.me-clip { position: absolute; border-radius: 6px; background: color-mix(in srgb, var(--lc) 38%, #15130f); border: 1px solid color-mix(in srgb, var(--lc) 70%, transparent); box-sizing: border-box; cursor: grab; overflow: hidden; touch-action: none; }
+.me-clip:active { cursor: grabbing; }
+.me-clip.sel { border-color: #fff; box-shadow: 0 0 0 1px #fff, 0 4px 14px #0008; z-index: 2; }
+.me-clip.muted { opacity: 0.4; }
+.me-clip.auto { border-style: dashed; }
+.me-wave { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0.85; }
+.me-fades { position: absolute; left: 0; top: 0; pointer-events: none; }
+.me-fades path { fill: #0000008c; }
+.me-fades path.line { fill: none; stroke: #fff; stroke-width: 1.2; opacity: 0.8; }
+.me-clip-name { position: absolute; left: 8px; top: 3px; right: 40px; font-size: 10.5px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.me-clip-len { position: absolute; right: 8px; top: 3px; font-size: 10px; color: #ffffffbb; pointer-events: none; }
+.me-trim { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
+.me-trim.l { left: 0; }
+.me-trim.r { right: 0; }
+.me-trim:hover { background: #ffffff33; }
+.me-fh { position: absolute; top: 1px; width: 11px; height: 11px; border-radius: 50%; background: #fff; border: 2px solid var(--lc); box-sizing: border-box; cursor: ew-resize; opacity: 0; transition: opacity 0.1s; }
+.me-clip:hover .me-fh, .me-clip.sel .me-fh { opacity: 1; }
+.me-end { position: absolute; top: 0; bottom: 0; right: 0; border-left: 2px solid #e58a7a; background: #00000066; pointer-events: none; }
+.me-end span { position: absolute; top: 3px; left: 4px; font-size: 10px; color: #e58a7a; white-space: nowrap; }
+.me-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--gold); box-shadow: 0 0 6px var(--gold); pointer-events: none; z-index: 3; }
+.me-foot { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-top: 1px solid var(--line); min-height: 40px; flex-wrap: wrap; }
+.me-foot .hint { font-size: 11.5px; margin: 0; }
+.me-foot .toggle { padding: 2px 0; }
+.me-form { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.me-form > b { font-size: 12px; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.me-num { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); }
+.me-num input { width: 62px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 5px; font-variant-numeric: tabular-nums; }
+.me-num small { color: var(--dim); }
+.me-len { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 음악 편집 창이 열려 있으면 알림은 편집 창 위(미리보기 쪽)에 */
+.app.music-open .toasts { bottom: calc(max(330px, 47vh) + 18px); }

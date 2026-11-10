@@ -178,12 +178,34 @@ const PreviewInner = forwardRef(function PreviewInner({ project, tl, quality, as
     playRange,
     pause: stop,
     toggle: () => (playRef.current.playing ? stop() : play()),
+    get playing() {
+      return playRef.current.playing;
+    },
     get time() {
       return timeRef.current;
     },
   }));
 
   useEffect(() => () => stop(), [stop]);
+
+  // 재생 중에 음악을 편집하면 (음악 편집 창) 잠시 뒤 지금 위치부터 바뀐 음악으로 다시 재생
+  // (박자 분석 결과처럼 소리에 영향 없는 변경으로는 다시 재생하지 않음)
+  const m = project.music;
+  const soundKey = JSON.stringify([m.mode, m.clips, m.muted, m.endFade, m.volume, m.fadeIn, m.fadeOut, m.crossfade, m.loop, (m.tracks || []).map((t) => t.path)]);
+  const musicRef = useRef(soundKey);
+  useEffect(() => {
+    if (musicRef.current === soundKey) return undefined;
+    musicRef.current = soundKey;
+    if (!playRef.current.playing) return undefined;
+    const id = setTimeout(() => {
+      if (!playRef.current.playing) return;
+      const t = timeRef.current;
+      stop();
+      setT(t);
+      play();
+    }, 250);
+    return () => clearTimeout(id);
+  }, [soundKey, play, stop, setT]);
 
   // 스크럽 바
   const barRef = useRef(null);

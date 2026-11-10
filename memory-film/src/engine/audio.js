@@ -2,6 +2,7 @@
 // 최종 출력(FFmpeg)과 같은 규칙: 곡 사이 크로스페이드, 반복, 전체 페이드인/아웃
 import { mediaUrl } from '../platform.js';
 import { detectBeats } from './beats.js';
+import { activeClips, fadeCurve } from './musicedit.js';
 
 export class AudioPreview {
   constructor() {
@@ -65,11 +66,41 @@ export class AudioPreview {
     });
   }
 
+  /** 파형 표시용: 0.01초마다 최대 진폭(0..1) — 곡마다 한 번만 계산 */
+  async peaks(path) {
+    this.peakCache = this.peakCache || new Map();
+    if (this.peakCache.has(path)) return this.peakCache.get(path);
+    await this.load(path);
+    const buf = this.buffers.get(path);
+    const per = Math.max(1, Math.round(buf.sampleRate / 100));
+    const n = Math.ceil(buf.length / per);
+    const out = new Float32Array(n);
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < n; i++) {
+        let m = out[i];
+        const end = Math.min(d.length, (i + 1) * per);
+        for (let k = i * per; k < end; k += 4) {
+          const v = d[k] < 0 ? -d[k] : d[k];
+          if (v > m) m = v;
+        }
+        out[i] = m;
+      }
+    }
+    // 조용한 곡도 보이게 정규화
+    let mx = 0;
+    for (let i = 0; i < n; i++) if (out[i] > mx) mx = out[i];
+    if (mx > 0) for (let i = 0; i < n; i++) out[i] /= mx;
+    this.peakCache.set(path, out);
+    return out;
+  }
+
   /** 영상 시간 fromT 부터 재생. 반환: 재생 기준 AudioContext 시각 */
   async play(music, fromT, total) {
     this.stop();
     const ctx = this._ctx();
     if (ctx.state === 'suspended') await ctx.resume();
+    if (music?.mode === 'edit') return this._playEdit(music, fromT, total);
     const tracks = (music.tracks || []).filter((t) => t.duration > 0.5);
     for (const t of tracks) {
       if (!this.buffers.has(t.path)) {
@@ -141,6 +172,67 @@ export class AudioPreview {
       i++;
     }
     return when;
+  }
+
+  /** 직접 편집한 음악: 조각마다 원곡 구간을 정해진 시각에, 페이드는 내보내기와 같은 곡선(qsin) */
+  async _playEdit(music, fromT, total) {
+    const ctx = this._ctx();
+    const clips = activeClips(music).filter((c) => c.start < total && c.start + (c.out - c.in) > fromT);
+    for (const c of clips) {
+      if (!this.buffers.has(c.path)) {
+        try {
+          await this.load(c.path);
+        } catch {
+          /* 무시 */
+        }
+      }
+    }
+    const when = ctx.currentTime + 0.05;
+    this.latency = ctx.outputLatency || ctx.baseLatency || 0;
+    const usable = clips.filter((c) => this.buffers.has(c.path));
+    if (!usable.length) return when;
+    this.hasAudio = true;
+    const vol = Number(music.volume ?? 1);
+    const fo = music.endFade === false ? 0 : Number(music.fadeOut) || 0;
+    const master = ctx.createGain();
+    master.connect(ctx.destination);
+    this.master = master;
+    // 음량 + 영상 끝 전체 페이드아웃
+    const menv = (t) => vol * (fo > 0 ? fadeCurve((total - t) / fo) : 1);
+    master.gain.setValueAtTime(menv(fromT), when);
+    if (fo > 0 && total - fromT > 0.01) this._curve(master.gain, menv, fromT, when, Math.max(fromT, total - fo), total);
+    for (const c of usable) {
+      const L = c.out - c.in;
+      const end = c.start + L;
+      const a = Math.max(fromT, c.start);
+      const b = Math.min(end, total);
+      if (b - a < 0.01) continue;
+      try {
+        const src = ctx.createBufferSource();
+        src.buffer = this.buffers.get(c.path);
+        const g = ctx.createGain();
+        src.connect(g).connect(master);
+        const startAt = when + (a - fromT);
+        const gv = (t) => (c.fadeIn > 0 ? fadeCurve((t - c.start) / c.fadeIn) : 1) * (c.fadeOut > 0 ? fadeCurve((end - t) / c.fadeOut) : 1);
+        // 조각 하나의 크기 변화는 곡선 하나로 (페이드인·아웃이 맞닿아도 겹치는 예약이 생기지 않게)
+        if (c.fadeIn > 0 || c.fadeOut > 0) this._curve(g.gain, gv, fromT, when, a, b);
+        else g.gain.setValueAtTime(1, startAt);
+        src.start(startAt, c.in + (a - c.start), b - a);
+        this.sources.push(src);
+      } catch {
+        /* 한 조각 예약이 실패해도 나머지는 재생 */
+      }
+    }
+    return when;
+  }
+
+  /** 영상 구간 [a, b] 의 값 f(t) 를 AudioParam 곡선 하나로 (초당 60개 정도, 최대 8192개) */
+  _curve(param, f, fromT, when, a, b) {
+    const N = Math.max(2, Math.min(8192, Math.ceil((b - a) * 60) + 1));
+    const arr = new Float32Array(N);
+    for (let i = 0; i < N; i++) arr[i] = f(a + ((b - a) * i) / (N - 1));
+    param.setValueAtTime(arr[0], when + (a - fromT));
+    param.setValueCurveAtTime(arr, when + (a - fromT) + 0.0005, Math.max(0.001, b - a - 0.0005));
   }
 
   /** 영상 시계 = 실제로 스피커에서 나오고 있는 소리의 시각 */

@@ -4,6 +4,7 @@
 import { buildTimeline, folderOf } from './timeline.js';
 import { planSelection, photoScore } from './select.js';
 import { newId, DIRECTIONS, TEMPLATES } from './presets.js';
+import { musicEnd } from './musicedit.js';
 
 const KNOWN = new Set(['exif', 'name', 'folder']);
 const yearOf = (it) => (it.date && KNOWN.has(it.dateSource) ? new Date(it.date).getFullYear() : null);
@@ -87,8 +88,9 @@ export function magicProject(base, { intro, track, fresh, seed, direction }) {
   const music =
     track === 'keep'
       ? base.music
-      : { ...base.music, tracks: track ? [track] : [], loop: true, fadeOut: Math.max(4, base.music.fadeOut || 5) };
-  const musicLen = music.tracks.reduce((s, t) => s + (t.duration || 0), 0);
+      : { ...base.music, tracks: track ? [track] : [], loop: true, fadeOut: Math.max(4, base.music.fadeOut || 5), mode: 'auto', clips: [], muted: [] };
+  // 직접 편집한 음악을 그대로 쓰면 그 끝 시각이 음악 길이
+  const musicLen = music.mode === 'edit' ? musicEnd(music) : music.tracks.reduce((s, t) => s + (t.duration || 0), 0);
   let project = {
     ...base,
     items,

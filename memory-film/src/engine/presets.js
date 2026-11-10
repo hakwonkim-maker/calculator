@@ -411,7 +411,8 @@ export function defaultProject() {
       enhance: 'old', // 옛 사진 자동 보정: off | old(옛 사진만) | all
       direction: 'classic', // 연출 스타일 (DIRECTIONS)
     },
-    music: { tracks: [], volume: 0.9, fadeIn: 1.5, fadeOut: 5, crossfade: 3, loop: true },
+    // mode: 'auto'(곡을 이어 붙이고 반복) | 'edit'(음악 편집 창에서 조각을 직접 배치 — musicedit.js)
+    music: { tracks: [], volume: 0.9, fadeIn: 1.5, fadeOut: 5, crossfade: 3, loop: true, mode: 'auto', clips: [], layers: 2, muted: [], endFade: true },
     output: { aspect: '16:9', resolution: '1080p', fps: 30, quality: 'high', encoder: 'auto', path: '' },
     items: [],
   };
@@ -427,6 +428,9 @@ export function normalizeProject(p) {
   if (!DIRECTIONS[out.style.direction]) out.style.direction = 'classic';
   out.items = Array.isArray(p?.items) ? p.items : [];
   out.music.tracks = Array.isArray(out.music.tracks) ? out.music.tracks : [];
+  out.music.clips = Array.isArray(out.music.clips) ? out.music.clips : [];
+  out.music.muted = Array.isArray(out.music.muted) ? out.music.muted : [];
+  if (out.music.mode !== 'edit') out.music.mode = 'auto';
   return out;
 }
 

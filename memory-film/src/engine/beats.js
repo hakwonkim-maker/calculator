@@ -1,4 +1,5 @@
 // 음악 박자 분석 + 영상 타임라인 위의 박자 위치
+import { editBeats } from './musicedit.js';
 // 1) 스펙트럼 변화량(onset) → 2) 자기상관으로 템포(BPM) → 3) 동적 계획법으로 박자 위치 추적 (Ellis 2007 방식)
 // 순수 함수라 미리보기·출력·테스트에서 같은 결과를 낸다.
 
@@ -217,6 +218,7 @@ export function detectBeats(x, sr) {
  * 반환: [{ t, s }] (t: 영상 시각, s: 세기)
  */
 export function beatsOnTimeline(music, total) {
+  if (music?.mode === 'edit') return editBeats(music, total);
   const tracks = (music?.tracks || []).filter((t) => t.duration > 0.5);
   if (!tracks.length || !tracks.some((t) => t.beats?.length)) return [];
   const xf = Number(music.crossfade) || 0;

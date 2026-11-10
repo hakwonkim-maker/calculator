@@ -7,6 +7,8 @@ import { analyzePhotos } from '../engine/quality.js';
 import { magicProject } from '../engine/magic.js';
 import { makeManualMontage, releaseMontages } from '../engine/edit.js';
 import { MagicModal } from './Magic.jsx';
+import { MusicEditor } from './MusicEditor.jsx';
+import { appendTrack } from '../engine/musicedit.js';
 import { HelpModal } from './Help.jsx';
 import { AudioPreview } from '../engine/audio.js';
 import { newId, normalizeProject, defaultProject, applyTemplate, TEMPLATES, MONTAGE_STYLES, LAYOUTS } from '../engine/presets.js';
@@ -84,6 +86,7 @@ export default function App() {
   const [busy, setBusy] = useState(null); // { text, done, total }
   const [showMagic, setShowMagic] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showMusicEd, setShowMusicEd] = useState(false);
   const busyCancel = useRef(false);
   const busyRef = useRef(false);
   busyRef.current = !!busy || showMagic;
@@ -239,6 +242,7 @@ export default function App() {
         update((p) => ({ ...p, intro: { ...p.intro, transition: 'auto' }, items: p.items.map((i) => (i.transition && i.transition !== 'auto' ? { ...i, transition: 'auto' } : i)) }));
         toast('모든 전환을 자동으로 되돌렸습니다');
       },
+      openMusicEditor: () => setShowMusicEd(true),
       addMusic: async () => {
         if (!isDesktop) return audioInput.current?.click();
         const paths = await api.pickAudio();
@@ -278,7 +282,22 @@ export default function App() {
   const addTrack = async (path, name, extra = {}) => {
     try {
       const duration = await audio.load(path);
-      update((p) => setPath(p, 'music.tracks', [...p.music.tracks, { path, name, duration, ...extra }]));
+      const track = { path, name, duration, ...extra };
+      if (projectRef.current.music.mode === 'edit') {
+        // 직접 편집 중이면 맨 끝 조각 뒤에 교차 페이드로 이어 붙임 (음악 편집 창에서 옮기기·자르기)
+        const withTrack = { ...projectRef.current.music, tracks: [...projectRef.current.music.tracks, track] };
+        const appended = appendTrack(withTrack, track, Number(withTrack.crossfade) || 3) !== withTrack;
+        update((p) => {
+          const m = { ...p.music, tracks: [...p.music.tracks, track] };
+          return { ...p, music: appendTrack(m, track, Number(m.crossfade) || 3) };
+        });
+        return toast(
+          appended ? `‘${name}’ 추가 (${fmtTime(duration)}) · 음악 편집 창의 맨 끝에 이어 붙였습니다` : `‘${name}’ 를 곡 목록에 추가했습니다 · 음악 편집 창에서 원하는 곳에 끌어다 놓으세요`,
+          'ok',
+          { label: '음악 편집 열기', run: () => setShowMusicEd(true) },
+        );
+      }
+      update((p) => setPath(p, 'music.tracks', [...p.music.tracks, track]));
       if (extra.libId) {
         // 라이브러리 곡이 영상보다 짧으면 자동으로 반복 재생
         const ml = musicLength({ ...projectRef.current.music, tracks: [...projectRef.current.music.tracks, { duration }] });
@@ -593,7 +612,16 @@ export default function App() {
       if (ex.every(Boolean)) return p;
       const { tracks } = await api.musicLibrary();
       const byId = new Map(tracks.filter((t) => t.local).map((t) => [t.id, t.path]));
-      return { ...p, music: { ...p.music, tracks: p.music.tracks.map((t) => (t.libId && byId.has(t.libId) ? { ...t, path: byId.get(t.libId) } : t)) } };
+      // 음악 편집 조각도 같은 곡을 가리키도록 경로를 함께 바꿈
+      const moved = new Map(p.music.tracks.filter((t) => t.libId && byId.has(t.libId)).map((t) => [t.path, byId.get(t.libId)]));
+      return {
+        ...p,
+        music: {
+          ...p.music,
+          tracks: p.music.tracks.map((t) => (moved.has(t.path) ? { ...t, path: moved.get(t.path) } : t)),
+          clips: (p.music.clips || []).map((c) => (moved.has(c.path) ? { ...c, path: moved.get(c.path) } : c)),
+        },
+      };
     } catch {
       return p;
     }
@@ -765,6 +793,8 @@ export default function App() {
       }
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || exportJob || showTemplates || askNew || busy || showMagic || showHelp) return;
       const mod = e.ctrlKey || e.metaKey;
+      // 음악 편집 창: Delete·화살표·Esc·전체 선택은 음악 편집 창이 처리 (사진이 지워지지 않게)
+      if (showMusicEd && !(e.code === 'Space' || (mod && /^[zys]$/i.test(e.key)))) return;
       if (e.code === 'Space') {
         e.preventDefault();
         previewRef.current?.toggle();
@@ -834,7 +864,7 @@ export default function App() {
   const empty = project.items.length === 0;
 
   return (
-    <div className="app">
+    <div className={'app' + (showMusicEd ? ' music-open' : '')}>
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">◆</span>
@@ -955,6 +985,20 @@ export default function App() {
         <Inspector project={project} update={update} tl={tl} selected={selected} actions={actions} onSelectIds={onSelectIds} />
       </aside>
 
+      {showMusicEd ? (
+        <MusicEditor
+          project={project}
+          update={update}
+          tl={tl}
+          audio={audio}
+          previewRef={previewRef}
+          actions={actions}
+          toast={toast}
+          onClose={() => setShowMusicEd(false)}
+          onGoMusic={() => setStep('music')}
+          blocked={!!(exportJob || showTemplates || askNew || busy || showMagic || showHelp)}
+        />
+      ) : (
       <footer className="strip-area">
         <div className="strip-bar">
           <span>
@@ -963,6 +1007,9 @@ export default function App() {
           <span className="strip-hint">드래그로 순서 변경 · ◆ 를 눌러 전환 효과 선택 · Shift/Ctrl 다중 선택</span>
           <div className="strip-actions">
             <Segmented value={compact ? 'small' : 'large'} onChange={(v) => setCompact(v === 'small')} size="sm" options={[['large', '크게'], ['small', '작게']]} />
+            <Button icon="music" size="sm" onClick={() => setShowMusicEd(true)} title="배경음악 자르기·붙이기·페이드·레이어 교차">
+              음악 편집
+            </Button>
             <Button icon="chapter" size="sm" onClick={() => actions.addChapter()}>
               챕터 추가
             </Button>
@@ -987,6 +1034,7 @@ export default function App() {
           onCtxAction={onCtxAction}
         />
       </footer>
+      )}
 
       {dragOver && (
         <div className="drop-overlay">

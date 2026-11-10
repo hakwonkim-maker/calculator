@@ -11,8 +11,49 @@ function ffmpegPath() {
   return p.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
 }
 
+/**
+ * 직접 편집한 음악(조각 배치) → ffmpeg 입력 인자 + 필터 그래프
+ * 조각마다 원곡 구간만 읽어(-ss/-t) 페이드(qsin) → 시작 시각만큼 지연 → 모두 합침(amix, 크기 보정 없음)
+ * (미리보기 audio.js 의 _playEdit 와 같은 규칙)
+ */
+function buildEditAudio(audio, total) {
+  const muted = new Set(audio.muted || []);
+  const paths = new Set((audio.tracks || []).map((t) => t.path));
+  const clips = (audio.clips || []).filter(
+    (c) => paths.has(c.path) && !muted.has(c.layer) && c.out - c.in > 0.05 && c.start < total && fs.existsSync(c.path),
+  );
+  if (!clips.length) return null;
+  const inputs = [];
+  const parts = [];
+  const labels = [];
+  clips.slice(0, 200).forEach((c, i) => {
+    const L = Math.min(c.out - c.in, total - c.start);
+    inputs.push('-ss', Math.max(0, c.in).toFixed(3), '-t', L.toFixed(3), '-i', c.path);
+    let ch = `[${i + 1}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=0:${L.toFixed(3)},asetpts=N/SR/TB`;
+    const fi = Math.min(Number(c.fadeIn) || 0, L);
+    // 영상 끝에서 잘린 조각은 원래 끝 기준의 페이드아웃 중 남은 부분만
+    const fullL = c.out - c.in;
+    const fo = Number(c.fadeOut) || 0;
+    if (fi > 0.01) ch += `,afade=t=in:st=0:d=${fi.toFixed(3)}:curve=qsin`;
+    if (fo > 0.01 && fullL - fo < L) ch += `,afade=t=out:st=${Math.max(0, fullL - fo).toFixed(3)}:d=${fo.toFixed(3)}:curve=qsin`;
+    const ms = Math.round(Math.max(0, c.start) * 1000);
+    if (ms > 0) ch += `,adelay=delays=${ms}:all=1`;
+    parts.push(ch + `[c${i}]`);
+    labels.push(`[c${i}]`);
+  });
+  const mix = labels.length > 1 ? `${labels.join('')}amix=inputs=${labels.length}:duration=longest:dropout_transition=0:normalize=0[mx];[mx]` : `${labels[0]}`;
+  const fo = audio.endFade === false ? 0 : Math.max(0, Number(audio.fadeOut) || 0);
+  const vol = Math.max(0, Math.min(2, Number(audio.volume ?? 1)));
+  let chain = `${mix}apad=whole_dur=${total.toFixed(3)},atrim=0:${total.toFixed(3)},asetpts=N/SR/TB`;
+  if (fo > 0) chain += `,afade=t=out:st=${Math.max(0, total - fo).toFixed(3)}:d=${fo.toFixed(2)}:curve=qsin`;
+  chain += `,volume=${vol.toFixed(3)}[aout]`;
+  parts.push(chain);
+  return { inputs, filter: parts.join(';') };
+}
+
 /** 음악 트랙 목록 → ffmpeg 입력 인자 + 필터 그래프 */
 function buildAudio(audio, total) {
+  if (audio?.mode === 'edit') return buildEditAudio(audio, total);
   const tracks = (audio?.tracks || []).filter((t) => t.path && t.duration > 0.5 && fs.existsSync(t.path));
   if (!tracks.length) return null;
   const xf = Math.max(0, Number(audio.crossfade) || 0);

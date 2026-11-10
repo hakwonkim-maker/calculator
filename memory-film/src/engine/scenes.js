@@ -13,6 +13,7 @@ import { introTiming } from './presets.js';
 import { drawMontage } from './montage.js';
 import { drawFramed, drawCircle, drawEditorial, drawCinema, drawPunch, applyReveal } from './layouts.js';
 import { accentAt } from './timeline.js';
+import { usedPaths } from './musicedit.js';
 
 export function drawSegment(ctx, seg, tau, env) {
   ctx.save();
@@ -68,7 +69,9 @@ export function drawSegment(ctx, seg, tau, env) {
  */
 function drawMusicCredit(ctx, seg, tau, env) {
   const { W, H, u, theme, typo } = env;
-  const lines = [...new Set((env.project.music?.tracks || []).filter((t) => t.needsCredit && t.credit).map((t) => t.credit))];
+  // 직접 편집한 음악은 실제로 쓰인 곡만 출처 표기
+  const used = usedPaths(env.project.music);
+  const lines = [...new Set((env.project.music?.tracks || []).filter((t) => t.needsCredit && t.credit && used.has(t.path)).map((t) => t.credit))];
   if (!lines.length) return;
   const from = seg.type === 'outro' ? 0.8 : Math.max(0, seg.dur - 6);
   const a = Math.min(prog(tau, from, from + 0.8), 1 - prog(tau, seg.dur - 0.6, seg.dur));

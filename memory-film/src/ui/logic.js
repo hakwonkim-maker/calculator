@@ -1,4 +1,5 @@
 // UI 비즈니스 로직: 사진 가져오기, 정렬, 자동 챕터, 점검 체크리스트
+import { musicEnd, silentGaps, activeClips } from '../engine/musicedit.js';
 import { api, isDesktop, baseName } from '../platform.js';
 import { newId, RESOLUTIONS, outputSize } from '../engine/presets.js';
 import { photoMeta } from './store.js';
@@ -141,10 +142,7 @@ export function autoYearLabels(project, overwrite = false) {
 }
 
 export function musicLength(music) {
-  const tr = (music.tracks || []).filter((t) => t.duration > 0);
-  if (!tr.length) return 0;
-  const xf = Number(music.crossfade) || 0;
-  return tr.reduce((s, t, i) => s + t.duration - (i > 0 ? Math.min(xf, t.duration / 2) : 0), 0);
+  return musicEnd(music);
 }
 
 /** 내보내기 전 점검 */
@@ -160,8 +158,13 @@ export function checklist(project, tl) {
   if (low.length) out.push({ level: 'warn', text: `저해상도 사진 ${low.length}장 — 대형 스크린에서 흐릿할 수 있습니다`, ids: low.map((m) => m.id) });
   const ml = musicLength(project.music);
   if (!project.music.tracks.length) out.push({ level: 'info', text: '배경음악이 없습니다. 무음 영상으로 만들어집니다.' });
-  else if (!project.music.loop && ml + 0.5 < tl.total) out.push({ level: 'warn', text: `음악(${fmtTime(ml)})이 영상(${fmtTime(tl.total)})보다 짧습니다. 끝부분이 무음이 됩니다.` });
-  else if (ml > tl.total + 20) out.push({ level: 'info', text: `음악이 ${fmtTime(ml - tl.total)} 더 깁니다. 영상 끝에서 자연스럽게 페이드아웃됩니다.` });
+  else if (project.music.mode === 'edit') {
+    // 직접 편집: 비는 구간(무음)을 알려 줌
+    const gaps = silentGaps(project.music, tl.total).filter(([a, b]) => b - a > 1);
+    if (!activeClips(project.music).length) out.push({ level: 'warn', text: '음악 편집 창에 놓인 곡 조각이 없어 무음 영상이 됩니다.' });
+    else if (gaps.length) out.push({ level: 'warn', text: `음악이 비는 구간이 ${gaps.length}곳 있습니다 (${gaps.slice(0, 3).map(([a, b]) => `${fmtTime(a)}~${fmtTime(b)}`).join(', ')}${gaps.length > 3 ? ' …' : ''}). 음악 편집 창의 ‘영상 길이 채우기’로 채울 수 있습니다.` });
+  } else if (!project.music.loop && ml + 0.5 < tl.total) out.push({ level: 'warn', text: `음악(${fmtTime(ml)})이 영상(${fmtTime(tl.total)})보다 짧습니다. 끝부분이 무음이 됩니다.` });
+  else if (project.music.mode !== 'edit' && ml > tl.total + 20) out.push({ level: 'info', text: `음악이 ${fmtTime(ml - tl.total)} 더 깁니다. 영상 끝에서 자연스럽게 페이드아웃됩니다.` });
   if (tl.fitShort) out.push({ level: 'warn', text: `사진이 많아 정한 길이(${fmtTime(tl.target)})보다 ${fmtTime(tl.total)}로 길어집니다.` });
   else if ((tl.photoDuration || project.style.photoDuration) < 1.5 && photos.length) out.push({ level: 'warn', text: '사진이 1.5초보다 빨리 넘어갑니다. 감상용이라면 전체 길이를 늘리는 것을 권장합니다.' });
   if (project.intro.enabled && !project.text.title.trim() && !project.text.number.trim()) out.push({ level: 'warn', text: '인트로 제목이 비어 있습니다.' });

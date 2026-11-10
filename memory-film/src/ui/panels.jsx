@@ -8,6 +8,7 @@ import {
 import { fitPhotoDurationToLength, minimumLength } from '../engine/timeline.js';
 import { planSelection } from '../engine/select.js';
 import { BEAT_CLEAR } from '../engine/beats.js';
+import { removeTrackClips, activeClips, silentGaps } from '../engine/musicedit.js';
 import { fmtTime } from '../engine/math.js';
 import { setPath } from './store.js';
 import { sortPhotos, shufflePhotos, autoChapters, autoYearLabels, musicLength, checklist, estimateSizeMB, hasKnownYear } from './logic.js';
@@ -769,6 +770,7 @@ function MusicLibrary({ project, actions, toast }) {
 
 export function MusicPanel({ project, update, tl, actions, toast }) {
   const m = project.music;
+  const edit = m.mode === 'edit';
   const ml = musicLength(m);
   const set = (k, c) => (v) => update((p) => setPath(p, 'music.' + k, v), c ? 'music.' + k : null);
   const moveTrack = (i, d) =>
@@ -794,10 +796,31 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
         <MusicLibrary project={project} actions={actions} toast={toast} />
       </Section>
 
-      <Section title="배경음악" hint="여러 곡을 넣으면 순서대로 자연스럽게 이어집니다 (크로스페이드). 내 음악 파일(MP3·M4A·WAV)도 넣을 수 있습니다.">
-        <Button icon="plus" variant="soft" onClick={actions.addMusic}>
-          내 음악 파일 추가
-        </Button>
+      <Section
+        title="배경음악"
+        hint={
+          edit
+            ? '음악 편집 창에서 직접 배치한 대로 나옵니다. 여기서 곡을 추가하면 맨 끝에 교차 페이드로 이어 붙습니다.'
+            : '여러 곡을 넣으면 순서대로 자연스럽게 이어집니다 (크로스페이드). 내 음악 파일(MP3·M4A·WAV)도 넣을 수 있습니다.'
+        }
+      >
+        <div className="btn-row">
+          <Button icon="plus" variant="soft" onClick={actions.addMusic}>
+            내 음악 파일 추가
+          </Button>
+          <Button icon="music" variant={edit ? 'primary' : 'soft'} onClick={actions.openMusicEditor} title="곡 자르기·붙이기·페이드인/아웃·레이어 교차 페이드">
+            음악 편집
+          </Button>
+        </div>
+        {edit && (
+          <p className="hint small">
+            ✂ 직접 편집 중 · 조각 {activeClips(m).length}개
+            {(() => {
+              const g = silentGaps(m, tl.total).filter(([a, b]) => b - a > 1);
+              return g.length ? ` · 음악이 비는 구간 ${g.length}곳` : '';
+            })()}
+          </p>
+        )}
         <div className="track-list">
           {m.tracks.map((t, i) => (
             <div key={t.path + i} className="track">
@@ -810,13 +833,20 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
                   {t.needsCredit && <span title={t.credit}> · CC BY — 영상 끝에 출처 자동 표시</span>}
                 </small>
               </div>
-              <button className="icon-btn" onClick={() => moveTrack(i, -1)} disabled={i === 0} title="위로">
+              <button className="icon-btn" onClick={() => moveTrack(i, -1)} disabled={i === 0 || edit} title={edit ? '직접 편집 중에는 음악 편집 창에서 순서를 바꿉니다' : '위로'}>
                 ▲
               </button>
-              <button className="icon-btn" onClick={() => moveTrack(i, 1)} disabled={i === m.tracks.length - 1} title="아래로">
+              <button className="icon-btn" onClick={() => moveTrack(i, 1)} disabled={i === m.tracks.length - 1 || edit} title={edit ? '직접 편집 중에는 음악 편집 창에서 순서를 바꿉니다' : '아래로'}>
                 ▼
               </button>
-              <button className="icon-btn" onClick={() => update((p) => setPath(p, 'music.tracks', p.music.tracks.filter((_, j) => j !== i)))} title="삭제">
+              <button className="icon-btn" onClick={() =>
+                  update((p) => {
+                    const tracks = p.music.tracks.filter((_, j) => j !== i);
+                    // 같은 파일을 두 번 넣은 경우 남은 쪽이 쓰는 조각은 그대로
+                    const music = { ...p.music, tracks };
+                    return { ...p, music: tracks.some((x) => x.path === t.path) ? music : removeTrackClips(music, t.path) };
+                  })
+                } title="삭제">
                 <Icon name="x" size={14} />
               </button>
             </div>
@@ -847,7 +877,13 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
             음악 길이에 영상 맞추기
           </Button>
           <p className="hint small">전체 길이를 음악 길이로 고정합니다. 이후 사진을 더 넣어도 음악이 끝날 때 영상도 함께 끝납니다.</p>
-          <Toggle checked={m.loop} onChange={set('loop')} label="음악 반복" desc="음악이 영상보다 짧으면 처음부터 다시 재생" />
+          {edit ? (
+            <Button icon="music" size="sm" variant="soft" onClick={actions.openMusicEditor}>
+              음악이 짧으면: 음악 편집 → 영상 길이 채우기
+            </Button>
+          ) : (
+            <Toggle checked={m.loop} onChange={set('loop')} label="음악 반복" desc="음악이 영상보다 짧으면 처음부터 다시 재생" />
+          )}
         </Section>
       )}
 
@@ -873,9 +909,10 @@ export function MusicPanel({ project, update, tl, actions, toast }) {
 
       <Section title="소리">
         <Slider label="음량" value={m.volume} min={0} max={1.5} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={set('volume', true)} />
-        <Slider label="시작 페이드인" value={m.fadeIn} min={0} max={6} step={0.5} format={fmtSec} onChange={set('fadeIn', true)} />
-        <Slider label="끝 페이드아웃" value={m.fadeOut} min={0} max={12} step={0.5} format={fmtSec} onChange={set('fadeOut', true)} />
-        <Slider label="곡 사이 크로스페이드" value={m.crossfade} min={0} max={8} step={0.5} format={fmtSec} onChange={set('crossfade', true)} />
+        {!edit && <Slider label="시작 페이드인" value={m.fadeIn} min={0} max={6} step={0.5} format={fmtSec} onChange={set('fadeIn', true)} />}
+        <Slider label={edit ? '영상 끝 페이드아웃' : '끝 페이드아웃'} value={m.fadeOut} min={0} max={12} step={0.5} format={fmtSec} onChange={set('fadeOut', true)} />
+        <Slider label={edit ? '이어 붙일 때 교차 길이' : '곡 사이 크로스페이드'} value={m.crossfade} min={0} max={8} step={0.5} format={fmtSec} onChange={set('crossfade', true)} />
+        {edit && <p className="hint small">조각마다의 페이드인·아웃은 음악 편집 창에서 조절합니다.</p>}
       </Section>
     </>
   );
